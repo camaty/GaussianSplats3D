@@ -58,6 +58,10 @@ export class DropInViewer extends THREE.Group {
      *         scale (Array<number>):      Scene's scale, defaults to [1, 1, 1]
      *
      *         onProgress:                 Function to be called as file data are received
+    *
+    *         plyColorOptions:            Optional. Color conversion options for PLY files only. If provided, overrides
+    *                                     the viewer-level 'plyColorOptions' for this scene. Use 'null' to disable
+    *                                     viewer-level PLY color conversion for this scene.
      *
      * }
      * @return {AbortablePromise}
@@ -83,6 +87,10 @@ export class DropInViewer extends THREE.Group {
      *         scale (Array<number>):      Scene's scale, defaults to [1, 1, 1]
      * }
      * @param {boolean} showLoadingUI Display a loading spinner while the scene is loading, defaults to true
+    *
+    *         plyColorOptions:            Optional. Color conversion options for PLY files only. If provided, overrides
+    *                                     the viewer-level 'plyColorOptions' for this scene. Use 'null' to disable
+    *                                     viewer-level PLY color conversion for this scene.
      * @return {AbortablePromise}
      */
     addSplatScenes(sceneOptions, showLoadingUI) {

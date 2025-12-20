@@ -734,6 +734,10 @@ export class Viewer {
      *         onProgress:                 Function to be called as file data are received, or other processing occurs
      *
      *         headers:                    Optional HTTP headers to be sent along with splat requests
+    *
+    *         plyColorOptions:            Optional. Color conversion options for PLY files only. If provided, overrides
+    *                                     the viewer-level 'plyColorOptions' for this scene. Use 'null' to disable
+    *                                     viewer-level PLY color conversion for this scene.
      * }
      * @return {AbortablePromise}
      */
@@ -827,9 +831,9 @@ export class Viewer {
         };
 
         const loadFunc = progressiveLoad ? this.downloadAndBuildSingleSplatSceneProgressiveLoad.bind(this) :
-                                           this.downloadAndBuildSingleSplatSceneStandardLoad.bind(this);
+                           this.downloadAndBuildSingleSplatSceneStandardLoad.bind(this);
         return loadFunc(path, format, options.splatAlphaRemovalThreshold, buildSection.bind(this),
-                        onProgress, hideLoadingUI.bind(this), options.headers);
+                onProgress, hideLoadingUI.bind(this), options.headers, options.plyColorOptions);
     }
 
     /**
@@ -845,10 +849,11 @@ export class Viewer {
      * @param {object} headers Optional HTTP headers to pass to use for downloading splat scene
      * @return {AbortablePromise}
      */
-    downloadAndBuildSingleSplatSceneStandardLoad(path, format, splatAlphaRemovalThreshold, buildFunc, onProgress, onException, headers) {
+    downloadAndBuildSingleSplatSceneStandardLoad(path, format, splatAlphaRemovalThreshold, buildFunc, onProgress,
+                                                 onException, headers, plyColorOptions) {
 
         const downloadPromise = this.downloadSplatSceneToSplatBuffer(path, splatAlphaRemovalThreshold, onProgress, false,
-                                                                     undefined, format, headers);
+                                         undefined, format, headers, plyColorOptions);
         const downloadAndBuildPromise = abortablePromiseWithExtractedComponents(downloadPromise.abortHandler);
 
         downloadPromise.then((splatBuffer) => {
@@ -885,7 +890,7 @@ export class Viewer {
      * @return {AbortablePromise}
      */
     downloadAndBuildSingleSplatSceneProgressiveLoad(path, format, splatAlphaRemovalThreshold, buildFunc,
-                                                    onDownloadProgress, onDownloadException, headers) {
+                                                    onDownloadProgress, onDownloadException, headers, plyColorOptions) {
         let progressiveLoadedSectionBuildCount = 0;
         let progressiveLoadedSectionBuilding = false;
         const queuedProgressiveLoadSectionBuilds = [];
@@ -928,7 +933,8 @@ export class Viewer {
         };
 
         const splatSceneDownloadPromise = this.downloadSplatSceneToSplatBuffer(path, splatAlphaRemovalThreshold, onDownloadProgress, true,
-                                                                               onProgressiveLoadSectionProgress, format, headers);
+                                               onProgressiveLoadSectionProgress, format, headers,
+                                               plyColorOptions);
 
         const progressiveLoadFirstSectionBuildPromise = abortablePromiseWithExtractedComponents(splatSceneDownloadPromise.abortHandler);
         const splatSceneDownloadAndBuildPromise = abortablePromiseWithExtractedComponents();
@@ -966,6 +972,10 @@ export class Viewer {
      *         scale (Array<number>):      Scene's scale, defaults to [1, 1, 1]
      *
      *         headers:                    Optional HTTP headers to be sent along with splat requests
+    *
+    *         plyColorOptions:            Optional. Color conversion options for PLY files only. If provided, overrides
+    *                                     the viewer-level 'plyColorOptions' for this scene. Use 'null' to disable
+    *                                     viewer-level PLY color conversion for this scene.
      *
      *         format (SceneFormat)        Optional, the format of the scene data (.ply, .ksplat, .splat). If not present, the
      *                                     file extension in 'path' will be used to determine the format (if it is present)
@@ -1015,7 +1025,7 @@ export class Viewer {
             const format = (options.format !== undefined && options.format !== null) ? options.format : sceneFormatFromPath(options.path);
             const baseDownloadPromise = this.downloadSplatSceneToSplatBuffer(options.path, options.splatAlphaRemovalThreshold,
                                                                              onLoadProgress.bind(this, i), false, undefined,
-                                                                             format, options.headers);
+                                                                             format, options.headers, options.plyColorOptions);
             baseDownloadPromises.push(baseDownloadPromise);
             nativeDownloadPromises.push(baseDownloadPromise.promise);
         }
@@ -1063,7 +1073,7 @@ export class Viewer {
      * @return {AbortablePromise}
      */
     downloadSplatSceneToSplatBuffer(path, splatAlphaRemovalThreshold = 1, onProgress = undefined,
-                                    progressiveBuild = false, onSectionBuilt = undefined, format, headers) {
+                                    progressiveBuild = false, onSectionBuilt = undefined, format, headers, plyColorOptions) {
         try {
             if (format === SceneFormat.Splat || format === SceneFormat.KSplat || format === SceneFormat.Ply) {
                 const optimizeSplatData = progressiveBuild ? false : this.optimizeSplatData;
@@ -1073,9 +1083,10 @@ export class Viewer {
                 } else if (format === SceneFormat.KSplat) {
                     return KSplatLoader.loadFromURL(path, onProgress, progressiveBuild, onSectionBuilt, headers);
                 } else if (format === SceneFormat.Ply) {
+                    const effectivePlyColorOptions = (plyColorOptions !== undefined) ? plyColorOptions : this.plyColorOptions;
                     return PlyLoader.loadFromURL(path, onProgress, progressiveBuild, onSectionBuilt, splatAlphaRemovalThreshold,
                                                  this.inMemoryCompressionLevel, optimizeSplatData, this.sphericalHarmonicsDegree,
-                                                 headers, undefined, undefined, undefined, undefined, this.plyColorOptions);
+                                                 headers, undefined, undefined, undefined, undefined, effectivePlyColorOptions);
                 }
             } else if (format === SceneFormat.Spz) {
                 return SpzLoader.loadFromURL(path, onProgress, splatAlphaRemovalThreshold, this.inMemoryCompressionLevel,
