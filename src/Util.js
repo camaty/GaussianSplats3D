@@ -164,11 +164,17 @@ export const delayedExecute = (func, fast) => {
 
 
 export const getSphericalHarmonicsComponentCountForDegree = (sphericalHarmonicsDegree = 0) => {
-    if (sphericalHarmonicsDegree === 0) return 0;
-    if (sphericalHarmonicsDegree === 1) return 9;
-    if (sphericalHarmonicsDegree === 2) return 24;
-    if (sphericalHarmonicsDegree === 3) return 45;
-    throw new Error('getSphericalHarmonicsComponentCountForDegree() -> Invalid spherical harmonics degree');
+    let shCoeffPerSplat = 0;
+    if (sphericalHarmonicsDegree === 1) {
+        shCoeffPerSplat = 9;
+    } else if (sphericalHarmonicsDegree === 2) {
+        shCoeffPerSplat = 24;
+    } else if (sphericalHarmonicsDegree === 3) {
+        shCoeffPerSplat = 45;
+    } else if (sphericalHarmonicsDegree > 3) {
+        throw new Error('getSphericalHarmonicsComponentCountForDegree() -> Invalid spherical harmonics degree');
+    }
+    return shCoeffPerSplat;
 };
 
 export const nativePromiseWithExtractedComponents = () => {

@@ -793,7 +793,7 @@ export class SplatMesh extends THREE.Mesh {
             if (paddedSHComponentCount % shElementsPerTexel !== 0) {
                 paddedSHComponentCount += shElementsPerTexel - (paddedSHComponentCount % shElementsPerTexel);
             }
-            const texelFormat = THREE.RGBAFormat;
+            const texelFormat = shElementsPerTexel === 4 ? THREE.RGBAFormat : THREE.RGFormat;
             let shTexSize = computeDataTextureSize(shElementsPerTexel, paddedSHComponentCount);
 
             // Use one texture for all spherical harmonics data
