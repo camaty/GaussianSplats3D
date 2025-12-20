@@ -408,6 +408,12 @@ export class SplatMaterial {
 
                 vertexShaderSource += `
                     if (sphericalHarmonicsDegree >= 3) {
+                        float xx = x * x;
+                        float yy = y * y;
+                        float zz = z * z;
+                        float xy = x * y;
+                        float yz = y * z;
+                        float xz = x * z;
                 `;
 
                 // Sample spherical harmonics textures with 3 degrees worth of data for 3rd degree calculations,
