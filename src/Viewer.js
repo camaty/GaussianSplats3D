@@ -153,6 +153,10 @@ export class Viewer {
         // Valid values are 0 - 2. Default value is 0.
         this.sphericalHarmonicsDegree = options.sphericalHarmonicsDegree || 0;
 
+        // Optional color conversion applied during PLY parsing (only affects red/green/blue color paths).
+        // Example: { inputColorSpace: 'srgb', exposure: 1.0, compressHdr: true }
+        this.plyColorOptions = options.plyColorOptions || null;
+
         // When true, allows for usage of extra properties and attributes during rendering for effects such as opacity adjustment.
         // Default is false for performance reasons. These properties are separate from transform properties (scale, rotation, position)
         // that are enabled by the 'dynamicScene' parameter.
@@ -1070,7 +1074,8 @@ export class Viewer {
                     return KSplatLoader.loadFromURL(path, onProgress, progressiveBuild, onSectionBuilt, headers);
                 } else if (format === SceneFormat.Ply) {
                     return PlyLoader.loadFromURL(path, onProgress, progressiveBuild, onSectionBuilt, splatAlphaRemovalThreshold,
-                                                 this.inMemoryCompressionLevel, optimizeSplatData, this.sphericalHarmonicsDegree, headers);
+                                                 this.inMemoryCompressionLevel, optimizeSplatData, this.sphericalHarmonicsDegree,
+                                                 headers, undefined, undefined, undefined, undefined, this.plyColorOptions);
                 }
             } else if (format === SceneFormat.Spz) {
                 return SpzLoader.loadFromURL(path, onProgress, splatAlphaRemovalThreshold, this.inMemoryCompressionLevel,

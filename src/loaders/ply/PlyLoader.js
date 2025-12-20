@@ -45,7 +45,7 @@ export class PlyLoader {
 
     static loadFromURL(fileName, onProgress, progressiveLoadToSplatBuffer, onProgressiveLoadSectionProgress,
                        minimumAlpha, compressionLevel, optimizeSplatData = true, outSphericalHarmonicsDegree = 0,
-                       headers, sectionSize, sceneCenter, blockSize, bucketSize) {
+                       headers, sectionSize, sceneCenter, blockSize, bucketSize, colorOptions) {
 
         let internalLoadType;
         if (!progressiveLoadToSplatBuffer && !optimizeSplatData) {
@@ -196,24 +196,24 @@ export class PlyLoader {
                                 if (plyFormat === PlyFormat.PlayCanvasCompressed) {
                                     PlayCanvasCompressedPlyParser.parseToUncompressedSplatBufferSection(
                                         header.chunkElement, header.vertexElement, 0, addedSplatCount - 1,
-                                        processedBaseSplatCount, dataToParse, directLoadBufferOut, outOffset
+                                        processedBaseSplatCount, dataToParse, directLoadBufferOut, outOffset, null, colorOptions
                                     );
                                 } else {
                                     INRIAV1PlyParser.parseToUncompressedSplatBufferSection(
                                         header, 0, addedSplatCount - 1, dataToParse, 0,
-                                        directLoadBufferOut, outOffset, outSphericalHarmonicsDegree
+                                        directLoadBufferOut, outOffset, outSphericalHarmonicsDegree, colorOptions
                                     );
                                 }
                             } else {
                                 if (plyFormat === PlyFormat.PlayCanvasCompressed) {
                                     PlayCanvasCompressedPlyParser.parseToUncompressedSplatArraySection(
                                         header.chunkElement, header.vertexElement, 0, addedSplatCount - 1,
-                                        processedBaseSplatCount, dataToParse, standardLoadUncompressedSplatArray
+                                        processedBaseSplatCount, dataToParse, standardLoadUncompressedSplatArray, null, colorOptions
                                     );
                                 } else {
                                     INRIAV1PlyParser.parseToUncompressedSplatArraySection(
                                         header, 0, addedSplatCount - 1, dataToParse, 0,
-                                        standardLoadUncompressedSplatArray, outSphericalHarmonicsDegree
+                                        standardLoadUncompressedSplatArray, outSphericalHarmonicsDegree, colorOptions
                                     );
                                 }
                             }
@@ -299,7 +299,7 @@ export class PlyLoader {
                     const chunkDatas = chunks.map((chunk) => chunk.data);
                     return new Blob(chunkDatas).arrayBuffer().then((plyFileData) => {
                         return PlyLoader.loadFromFileData(plyFileData, minimumAlpha, compressionLevel, optimizeSplatData,
-                                                          outSphericalHarmonicsDegree, sectionSize, sceneCenter, blockSize, bucketSize);
+                                                          outSphericalHarmonicsDegree, sectionSize, sceneCenter, blockSize, bucketSize, colorOptions);
                     });
                 } else if (internalLoadType === InternalLoadType.ProgressiveToSplatBuffer) {
                     return splatData;
@@ -314,10 +314,10 @@ export class PlyLoader {
     }
 
     static loadFromFileData(plyFileData, minimumAlpha, compressionLevel, optimizeSplatData, outSphericalHarmonicsDegree = 0,
-                            sectionSize, sceneCenter, blockSize, bucketSize) {
+                            sectionSize, sceneCenter, blockSize, bucketSize, colorOptions) {
         if (optimizeSplatData) {
             return delayedExecute(() => {
-                return PlyParser.parseToUncompressedSplatArray(plyFileData, outSphericalHarmonicsDegree);
+                return PlyParser.parseToUncompressedSplatArray(plyFileData, outSphericalHarmonicsDegree, colorOptions);
             })
             .then((splatArray) => {
                 return finalize(splatArray, optimizeSplatData, minimumAlpha, compressionLevel,
@@ -325,7 +325,7 @@ export class PlyLoader {
             });
         } else {
             return delayedExecute(() => {
-                return PlyParser.parseToUncompressedSplatBuffer(plyFileData, outSphericalHarmonicsDegree);
+                return PlyParser.parseToUncompressedSplatBuffer(plyFileData, outSphericalHarmonicsDegree, colorOptions);
             });
         }
     }

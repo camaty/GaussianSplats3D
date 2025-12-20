@@ -159,12 +159,12 @@ export class INRIAV2PlyParser {
         return codeBook;
     }
 
-    static decodeSectionSplatData(sectionSplatData, splatCount, sectionHeader, codeBook, outSphericalHarmonicsDegree) {
+    static decodeSectionSplatData(sectionSplatData, splatCount, sectionHeader, codeBook, outSphericalHarmonicsDegree, colorOptions) {
         outSphericalHarmonicsDegree = Math.min(outSphericalHarmonicsDegree, sectionHeader.sphericalHarmonicsDegree);
         const splatArray = new UncompressedSplatArray(outSphericalHarmonicsDegree);
         for (let row = 0; row < splatCount; row++) {
             const newSplat = INRIAV2PlyParser.parseToUncompressedSplat(sectionSplatData, row, sectionHeader, codeBook,
-                                                                       0, outSphericalHarmonicsDegree);
+                                                                       0, outSphericalHarmonicsDegree, colorOptions);
             splatArray.addSplat(newSplat);
         }
         return splatArray;
@@ -199,7 +199,7 @@ export class INRIAV2PlyParser {
             OFFSET_FRC[i] = UncompressedSplatArray.OFFSET.FRC0 + i;
         }
 
-        return function(splatData, row, header, codeBook, splatDataOffset = 0, outSphericalHarmonicsDegree = 0) {
+        return function(splatData, row, header, codeBook, splatDataOffset = 0, outSphericalHarmonicsDegree = 0, colorOptions) {
             outSphericalHarmonicsDegree = Math.min(outSphericalHarmonicsDegree, header.sphericalHarmonicsDegree);
             INRIAV2PlyParser.readSplat(splatData, header, row, splatDataOffset, rawSplat);
             const newSplat = UncompressedSplatArray.createSplat(outSphericalHarmonicsDegree);
@@ -218,9 +218,9 @@ export class INRIAV2PlyParser {
                 newSplat[OFFSET_FDC1] = codeBook[CB_FEATURES_DC][rawSplat[PLY_F_DC_1]];
                 newSplat[OFFSET_FDC2] = codeBook[CB_FEATURES_DC][rawSplat[PLY_F_DC_2]];
             } else if (rawSplat[PLY_RED] !== undefined) {
-                newSplat[OFFSET_FDC0] = rawSplat[PLY_RED] * 255;
-                newSplat[OFFSET_FDC1] = rawSplat[PLY_GREEN] * 255;
-                newSplat[OFFSET_FDC2] = rawSplat[PLY_BLUE] * 255;
+                newSplat[OFFSET_FDC0] = PlyParserUtils.applyColorOptions01(rawSplat[PLY_RED], colorOptions) * 255;
+                newSplat[OFFSET_FDC1] = PlyParserUtils.applyColorOptions01(rawSplat[PLY_GREEN], colorOptions) * 255;
+                newSplat[OFFSET_FDC2] = PlyParserUtils.applyColorOptions01(rawSplat[PLY_BLUE], colorOptions) * 255;
             } else {
                 newSplat[OFFSET_FDC0] = 0;
                 newSplat[OFFSET_FDC1] = 0;
@@ -280,7 +280,7 @@ export class INRIAV2PlyParser {
         return PlyParserUtils.readVertex(splatData, header, row, dataOffset, FieldsToReadIndexes, rawSplat, false);
     }
 
-    static parseToUncompressedSplatArray(plyBuffer, outSphericalHarmonicsDegree = 0) {
+    static parseToUncompressedSplatArray(plyBuffer, outSphericalHarmonicsDegree = 0, colorOptions) {
         const splatArrays = [];
         const header = INRIAV2PlyParser.decodeHeaderFromBuffer(plyBuffer, outSphericalHarmonicsDegree);
         let codeBook;
@@ -298,7 +298,7 @@ export class INRIAV2PlyParser {
                 const splatCount = sectionHeader.vertexCount;
                 const vertexData = INRIAV2PlyParser.findVertexData(plyBuffer, header, s);
                 const splatArray = INRIAV2PlyParser.decodeSectionSplatData(vertexData, splatCount, sectionHeader,
-                                                               codeBook, outSphericalHarmonicsDegree);
+                                                               codeBook, outSphericalHarmonicsDegree, colorOptions);
                 splatArrays.push(splatArray);
             }
         }

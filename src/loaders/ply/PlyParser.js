@@ -6,23 +6,23 @@ import { PlyFormat } from './PlyFormat.js';
 
 export class PlyParser {
 
-    static parseToUncompressedSplatArray(plyBuffer, outSphericalHarmonicsDegree = 0) {
+    static parseToUncompressedSplatArray(plyBuffer, outSphericalHarmonicsDegree = 0, colorOptions) {
         const plyFormat = PlyParserUtils.determineHeaderFormatFromPlyBuffer(plyBuffer);
         if (plyFormat === PlyFormat.PlayCanvasCompressed) {
-            return PlayCanvasCompressedPlyParser.parseToUncompressedSplatArray(plyBuffer, outSphericalHarmonicsDegree);
+            return PlayCanvasCompressedPlyParser.parseToUncompressedSplatArray(plyBuffer, outSphericalHarmonicsDegree, colorOptions);
         } else if (plyFormat === PlyFormat.INRIAV1) {
-            return INRIAV1PlyParser.parseToUncompressedSplatArray(plyBuffer, outSphericalHarmonicsDegree);
+            return INRIAV1PlyParser.parseToUncompressedSplatArray(plyBuffer, outSphericalHarmonicsDegree, colorOptions);
         } else if (plyFormat === PlyFormat.INRIAV2) {
-            return INRIAV2PlyParser.parseToUncompressedSplatArray(plyBuffer, outSphericalHarmonicsDegree);
+            return INRIAV2PlyParser.parseToUncompressedSplatArray(plyBuffer, outSphericalHarmonicsDegree, colorOptions);
         }
     }
 
-    static parseToUncompressedSplatBuffer(plyBuffer, outSphericalHarmonicsDegree = 0) {
+    static parseToUncompressedSplatBuffer(plyBuffer, outSphericalHarmonicsDegree = 0, colorOptions) {
         const plyFormat = PlyParserUtils.determineHeaderFormatFromPlyBuffer(plyBuffer);
         if (plyFormat === PlyFormat.PlayCanvasCompressed) {
-            return PlayCanvasCompressedPlyParser.parseToUncompressedSplatBuffer(plyBuffer, outSphericalHarmonicsDegree);
+            return PlayCanvasCompressedPlyParser.parseToUncompressedSplatBuffer(plyBuffer, outSphericalHarmonicsDegree, colorOptions);
         } else if (plyFormat === PlyFormat.INRIAV1) {
-            return INRIAV1PlyParser.parseToUncompressedSplatBuffer(plyBuffer, outSphericalHarmonicsDegree);
+            return INRIAV1PlyParser.parseToUncompressedSplatBuffer(plyBuffer, outSphericalHarmonicsDegree, colorOptions);
         } else if (plyFormat === PlyFormat.INRIAV2) {
              // TODO: Implement!
             throw new Error('parseToUncompressedSplatBuffer() is not implemented for INRIA V2 PLY files');

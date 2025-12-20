@@ -287,14 +287,19 @@
     let currentAntialiased;
     let current2DScene;
     let currentSphericalHarmonicsDegree;
+    let currentPlyInputColorSpace;
+    let currentPlyExposure;
+    let currentPlyCompressHdr;
   </script>
   <script type="module">
     import * as GaussianSplats3D from 'gaussian-splats-3d';
     import * as THREE from 'three';
 
-    function fileBufferToSplatBuffer(fileBufferData, format, alphaRemovalThreshold, compressionLevel, sectionSize, sceneCenter, blockSize, bucketSize, outSphericalHarmonicsDegree = 0) {
+    function fileBufferToSplatBuffer(fileBufferData, format, alphaRemovalThreshold, compressionLevel, sectionSize, sceneCenter, blockSize, bucketSize, outSphericalHarmonicsDegree = 0, plyColorOptions) {
       if (format === GaussianSplats3D.SceneFormat.Ply) {
-        return GaussianSplats3D.PlyLoader.loadFromFileData(fileBufferData.data, alphaRemovalThreshold, compressionLevel, true, outSphericalHarmonicsDegree, sectionSize, sceneCenter, blockSize, bucketSize);
+        return GaussianSplats3D.PlyLoader.loadFromFileData(fileBufferData.data, alphaRemovalThreshold, compressionLevel, true,
+                                                           outSphericalHarmonicsDegree, sectionSize, sceneCenter, blockSize, bucketSize,
+                                                           plyColorOptions);
       } else {
         if (format === GaussianSplats3D.SceneFormat.Splat) {
           return GaussianSplats3D.SplatLoader.loadFromFileData(fileBufferData.data, alphaRemovalThreshold, compressionLevel, true, sectionSize, sceneCenter, blockSize, bucketSize);
@@ -302,6 +307,14 @@
           return GaussianSplats3D.KSplatLoader.loadFromFileData(fileBufferData.data);
         }
       }
+    }
+
+    function readPlyColorOptions(prefix) {
+      const inputColorSpace = document.getElementById(prefix + "PlyInputColorSpace")?.value || 'linear';
+      const exposureRaw = parseFloat(document.getElementById(prefix + "PlyExposure")?.value);
+      const exposure = (isNaN(exposureRaw) || exposureRaw <= 0) ? 1.0 : exposureRaw;
+      const compressHdr = !!document.getElementById(prefix + "PlyCompressHdr")?.checked;
+      return { inputColorSpace, exposure, compressHdr };
     }
 
     window.onCompressionLevelChange = function(arg) {
@@ -336,6 +349,7 @@
       const compressionLevel = parseInt(document.getElementById("compressionLevel").value);
       const alphaRemovalThreshold = parseInt(document.getElementById("alphaRemovalThreshold").value);
       const sphericalHarmonicsDegree = parseInt(document.getElementById("conversionSphericalHarmonicsDegree").value);
+      const plyColorOptions = readPlyColorOptions('conversion');
       const sectionSize = 0;
       let sceneCenterArray = document.getElementById("sceneCenter").value;
       const blockSize = parseFloat(document.getElementById("blockSize").value);
@@ -408,7 +422,8 @@
           window.setTimeout(() => {
             try {
               const splatBufferPromise = fileBufferToSplatBuffer(fileData, format, alphaRemovalThreshold, compressionLevel,
-                                                                 sectionSize, sceneCenter, blockSize, bucketSize, sphericalHarmonicsDegree);
+                                                                 sectionSize, sceneCenter, blockSize, bucketSize,
+                                                                 sphericalHarmonicsDegree, plyColorOptions);
               splatBufferPromise.then((splatBuffer) => {
                 GaussianSplats3D.KSplatLoader.downloadFile(splatBuffer, 'converted_file.ksplat');
                 conversionDone();
@@ -458,6 +473,15 @@
       let antialiased = document.getElementById("antialiased").checked;
       let sceneIs2D = document.getElementById("2dScene").checked;
       let sphericalHarmonicsDegree = parseInt(document.getElementById("viewSphericalHarmonicsDegree").value);
+
+      const plyInputColorSpace = document.getElementById('viewPlyInputColorSpace').value;
+      const plyExposure = parseFloat(document.getElementById('viewPlyExposure').value);
+      const plyCompressHdr = document.getElementById('viewPlyCompressHdr').checked;
+      const plyColorOptions = {
+        inputColorSpace: plyInputColorSpace,
+        exposure: (isNaN(plyExposure) || plyExposure <= 0) ? 1.0 : plyExposure,
+        compressHdr: !!plyCompressHdr
+      };
 
       cameraUpArray = cameraUpArray.split(',');
       cameraPositionArray = cameraPositionArray.split(',');
@@ -520,12 +544,16 @@
       currentAntialiased = antialiased;
       current2DScene = sceneIs2D;
       currentSphericalHarmonicsDegree = sphericalHarmonicsDegree;
+      currentPlyInputColorSpace = plyColorOptions.inputColorSpace;
+      currentPlyExposure = plyColorOptions.exposure;
+      currentPlyCompressHdr = plyColorOptions.compressHdr;
 
       try {
         const fileReader = new FileReader();
         fileReader.onload = function(){
           try {
-           runViewer(fileReader.result, format, alphaRemovalThreshold, cameraUpArray, cameraPositionArray, cameraLookAtArray, antialiased, sceneIs2D, sphericalHarmonicsDegree);
+           runViewer(fileReader.result, format, alphaRemovalThreshold, cameraUpArray, cameraPositionArray, cameraLookAtArray,
+                     antialiased, sceneIs2D, sphericalHarmonicsDegree, plyColorOptions);
           } catch (e) {
             console.error(e);
             setViewError("Could not view scene.");
@@ -557,13 +585,16 @@
   
     window.addEventListener("popstate", (event) => {
       if (currentAlphaRemovalThreshold !== undefined) {
-        window.location = 'index.html?art=' + currentAlphaRemovalThreshold + '&cu=' + currentCameraUpArray + "&cp=" + currentCameraPositionArray + "&cla=" + currentCameraLookAtArray + "&aa=" + currentAntialiased + "&2d=" + current2DScene + "&sh=" + currentSphericalHarmonicsDegree;
+        window.location = 'index.html?art=' + currentAlphaRemovalThreshold + '&cu=' + currentCameraUpArray + "&cp=" + currentCameraPositionArray +
+                          "&cla=" + currentCameraLookAtArray + "&aa=" + currentAntialiased + "&2d=" + current2DScene + "&sh=" + currentSphericalHarmonicsDegree +
+                          "&cs=" + (currentPlyInputColorSpace || 'linear') + "&exp=" + (currentPlyExposure ?? 1.0) + "&chdr=" + (!!currentPlyCompressHdr);
       } else {
         window.location = 'index.html';
       }
     });
 
-    function runViewer(splatBufferData, format, alphaRemovalThreshold, cameraUpArray, cameraPositionArray, cameraLookAtArray, antialiased, sceneIs2D, sphericalHarmonicsDegree) {
+    function runViewer(splatBufferData, format, alphaRemovalThreshold, cameraUpArray, cameraPositionArray, cameraLookAtArray,
+                       antialiased, sceneIs2D, sphericalHarmonicsDegree, plyColorOptions) {
       const viewerOptions = {
         'cameraUp': cameraUpArray,
         'initialCameraPosition': cameraPositionArray,
@@ -577,7 +608,8 @@
         'splatAlphaRemovalThreshold': alphaRemovalThreshold
       };
       const splatBufferPromise = fileBufferToSplatBuffer({data: splatBufferData}, format, alphaRemovalThreshold, 0,
-                                                          undefined, undefined, undefined, undefined, sphericalHarmonicsDegree);
+                                                          undefined, undefined, undefined, undefined, sphericalHarmonicsDegree,
+                                                          plyColorOptions);
       splatBufferPromise.then((splatBuffer) => {
         document.getElementById("demo-content").style.display = 'none';
         document.body.style.backgroundColor = "#000000";
@@ -691,7 +723,7 @@
     <br>
     <div class="header-content-container">
         <div class="content-row">
-            <div id ="view-panel" class="splat-panel" style="height:400px;">
+            <div id ="view-panel" class="splat-panel" style="height:480px;">
                 <br>
                 <div class="small-title">View a <span class="file-ext">.ply</span>, <span class="file-ext">.ksplat</span>, or <span class="file-ext-small">.splat</span> file</div>
                 <br>
@@ -730,6 +762,34 @@
                       </td>
                       <td style="text-align:left;">
                         <input type="checkbox" id="2dScene" class="checkbox-input"/>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>
+                        PLY input:
+                      </td>
+                      <td>
+                        <select id="viewPlyInputColorSpace" class="text-input" style="width: 90px">
+                          <option value="linear">linear</option>
+                          <option value="srgb">sRGB</option>
+                        </select>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>
+                        Exposure:
+                      </td>
+                      <td>
+                        <input id="viewPlyExposure" type="text" class="text-input" style="width: 50px" value="1.0"></input>
+                        <span class="valid-value-label">( &gt; 0 )</span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>
+                        HDR compress
+                      </td>
+                      <td style="text-align:left;">
+                        <input type="checkbox" id="viewPlyCompressHdr" class="checkbox-input"/>
                       </td>
                     </tr>
                     <tr>
@@ -782,7 +842,7 @@
                 <span id="viewError" style="color: #ff0000"></span>
             </div>
       
-            <div id ="conversion-panel" class="splat-panel" style="height:420px;">
+            <div id ="conversion-panel" class="splat-panel" style="height:480px;">
                 <br>
                 <span class="small-title">Convert a <span class="file-ext">.ply</span> or <span class="file-ext">.splat</span> to <span class="file-ext">.ksplat</span></span>
                 <br>
@@ -834,6 +894,39 @@
                         <input id="conversionSphericalHarmonicsDegree" type="text" class="text-input" style="width: 50px" value="0"></input>
                         <span class="valid-value-label">(0, 1, 2, or 3)</span>
                     </td>
+                    </tr>
+                    <tr>
+                      <td colspan="2" style="font-weight:bold; padding-top:15px; padding-bottom: 5px;">
+                        PLY color options
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>
+                        PLY input:
+                      </td>
+                      <td>
+                        <select id="conversionPlyInputColorSpace" class="text-input" style="width: 90px">
+                          <option value="linear">linear</option>
+                          <option value="srgb">sRGB</option>
+                        </select>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>
+                        Exposure:
+                      </td>
+                      <td>
+                        <input id="conversionPlyExposure" type="text" class="text-input" style="width: 50px" value="1.0"></input>
+                        <span class="valid-value-label">( &gt; 0 )</span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>
+                        HDR compress
+                      </td>
+                      <td style="text-align:left;">
+                        <input type="checkbox" id="conversionPlyCompressHdr" class="checkbox-input"/>
+                      </td>
                     </tr>
                     <tr id="advancedCompressionRow1">
                       <td colspan="2" style="font-weight:bold; padding-top:15px; padding-bottom: 5px;">
@@ -999,6 +1092,17 @@
         }  else if (varName == "sh") {
           currentSphericalHarmonicsDegree = component[1];
           document.getElementById('viewSphericalHarmonicsDegree').value = currentSphericalHarmonicsDegree;
+        } else if (varName == "cs") {
+          currentPlyInputColorSpace = component[1];
+          const v = (currentPlyInputColorSpace === 'srgb') ? 'srgb' : 'linear';
+          document.getElementById('viewPlyInputColorSpace').value = v;
+        } else if (varName == "exp") {
+          currentPlyExposure = parseFloat(component[1]);
+          if (isNaN(currentPlyExposure) || currentPlyExposure <= 0) currentPlyExposure = 1.0;
+          document.getElementById('viewPlyExposure').value = currentPlyExposure;
+        } else if (varName == "chdr") {
+          currentPlyCompressHdr = component[1] === 'true' ? true : false;
+          document.getElementById('viewPlyCompressHdr').checked = currentPlyCompressHdr;
         }
       }
     }

@@ -309,4 +309,31 @@ export class PlyParserUtils {
             }
         }
     }
+
+    static srgbToLinear(value) {
+        if (value <= 0.04045) return value / 12.92;
+        return Math.pow((value + 0.055) / 1.055, 2.4);
+    }
+
+    static applyColorOptions01(colorValue01, colorOptions) {
+        if (colorValue01 === undefined || colorValue01 === null) return 0;
+
+        let v = colorValue01;
+        const inputColorSpace = colorOptions?.inputColorSpace || 'linear';
+        const exposure = (colorOptions?.exposure === undefined || colorOptions?.exposure === null) ? 1.0 : colorOptions.exposure;
+        const compressHdr = !!colorOptions?.compressHdr;
+
+        if (inputColorSpace === 'srgb') {
+            const clamped = Math.min(Math.max(v, 0.0), 1.0);
+            v = PlyParserUtils.srgbToLinear(clamped);
+        }
+
+        v *= exposure;
+
+        if (compressHdr && v > 1.0) {
+            v = v / (1.0 + v);
+        }
+
+        return Math.min(Math.max(v, 0.0), 1.0);
+    }
 }
