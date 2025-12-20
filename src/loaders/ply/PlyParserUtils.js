@@ -127,7 +127,8 @@ export class PlyParserUtils {
             'sphericalHarmonicsDegree': sphericalHarmonics.degree,
             'sphericalHarmonicsCoefficientsPerChannel': sphericalHarmonics.coefficientsPerChannel,
             'sphericalHarmonicsDegree1Fields': sphericalHarmonics.degree1Fields,
-            'sphericalHarmonicsDegree2Fields': sphericalHarmonics.degree2Fields
+            'sphericalHarmonicsDegree2Fields': sphericalHarmonics.degree2Fields,
+            'sphericalHarmonicsDegree3Fields': sphericalHarmonics.degree3Fields
         };
 
     }
@@ -142,9 +143,11 @@ export class PlyParserUtils {
         let degree = 0;
         if (coefficientsPerChannel >= 3) degree = 1;
         if (coefficientsPerChannel >= 8) degree = 2;
+        if (coefficientsPerChannel >= 15) degree = 3;
 
         let degree1Fields = [];
         let degree2Fields = [];
+        let degree3Fields = [];
 
         for (let rgb = 0; rgb < 3; rgb++) {
             if (degree >= 1) {
@@ -157,13 +160,19 @@ export class PlyParserUtils {
                     degree2Fields.push(fieldNameIdMap['f_rest_' + (i + coefficientsPerChannel * rgb + 3)]);
                 }
             }
+            if (degree >= 3) {
+                for (let i = 0; i < 7; i++) {
+                    degree3Fields.push(fieldNameIdMap['f_rest_' + (i + coefficientsPerChannel * rgb + 8)]);
+                }
+            }
         }
 
         return {
             'degree': degree,
             'coefficientsPerChannel': coefficientsPerChannel,
             'degree1Fields': degree1Fields,
-            'degree2Fields': degree2Fields
+            'degree2Fields': degree2Fields,
+            'degree3Fields': degree3Fields
         };
     }
 

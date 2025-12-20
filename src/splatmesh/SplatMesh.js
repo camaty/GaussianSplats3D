@@ -783,11 +783,13 @@ export class SplatMesh extends THREE.Mesh {
 
         if (shData) {
             const shTextureType = shCompressionLevel === 2 ? THREE.UnsignedByteType : THREE.HalfFloatType;
+            const shElementsPerTexel = 4;
 
             let paddedSHComponentCount = shComponentCount;
-            if (paddedSHComponentCount % 2 !== 0) paddedSHComponentCount++;
-            const shElementsPerTexel = this.minSphericalHarmonicsDegree === 2 ? 4 : 2;
-            const texelFormat = shElementsPerTexel === 4 ? THREE.RGBAFormat : THREE.RGFormat;
+            if (paddedSHComponentCount % shElementsPerTexel !== 0) {
+                paddedSHComponentCount += shElementsPerTexel - (paddedSHComponentCount % shElementsPerTexel);
+            }
+            const texelFormat = THREE.RGBAFormat;
             let shTexSize = computeDataTextureSize(shElementsPerTexel, paddedSHComponentCount);
 
             // Use one texture for all spherical harmonics data
@@ -819,7 +821,9 @@ export class SplatMesh extends THREE.Mesh {
             } else {
                 const shComponentCountPerChannel = shComponentCount / 3;
                 paddedSHComponentCount = shComponentCountPerChannel;
-                if (paddedSHComponentCount % 2 !== 0) paddedSHComponentCount++;
+                if (paddedSHComponentCount % shElementsPerTexel !== 0) {
+                    paddedSHComponentCount += shElementsPerTexel - (paddedSHComponentCount % shElementsPerTexel);
+                }
                 shTexSize = computeDataTextureSize(shElementsPerTexel, paddedSHComponentCount);
 
                 const paddedSHArraySize = shTexSize.x * shTexSize.y * shElementsPerTexel;
@@ -834,11 +838,8 @@ export class SplatMesh extends THREE.Mesh {
                     for (let c = 0; c < splatCount; c++) {
                         const srcBase = shComponentCount * c;
                         const destBase = paddedSHComponentCount * c;
-                        if (shComponentCountPerChannel >= 3) {
-                            for (let i = 0; i < 3; i++) paddedSHArray[destBase + i] = shData[srcBase + t * 3 + i];
-                            if (shComponentCountPerChannel >= 8) {
-                                for (let i = 0; i < 5; i++) paddedSHArray[destBase + 3 + i] = shData[srcBase + 9 + t * 5 + i];
-                            }
+                        for (let i = 0; i < shComponentCountPerChannel; i++) {
+                            paddedSHArray[destBase + i] = shData[srcBase + t + i * 3];
                         }
                     }
 
@@ -1024,11 +1025,8 @@ export class SplatMesh extends THREE.Mesh {
                     for (let c = fromSplat; c <= toSplat; c++) {
                         const srcBase = shComponentCount * c;
                         const destBase = paddedSHComponentCount * c;
-                        if (shComponentCountPerChannel >= 3) {
-                            for (let i = 0; i < 3; i++) paddedSHArray[destBase + i] = shData[srcBase + t * 3 + i];
-                            if (shComponentCountPerChannel >= 8) {
-                                for (let i = 0; i < 5; i++) paddedSHArray[destBase + 3 + i] = shData[srcBase + 9 + t * 5 + i];
-                            }
+                        for (let i = 0; i < shComponentCountPerChannel; i++) {
+                            paddedSHArray[destBase + i] = shData[srcBase + t + i * 3];
                         }
                     }
                     updateTexture(shTextureDesc.textures[t], shTextureDesc.size,

@@ -121,7 +121,8 @@ export class SplatBuffer {
             SphericalHarmonicsDegrees: {
                 0: { BytesPerSplat: 44 },
                 1: { BytesPerSplat: 80 },
-                2: { BytesPerSplat: 140 }
+                2: { BytesPerSplat: 140 },
+                3: { BytesPerSplat: 224 }
             },
         },
         1: {
@@ -139,7 +140,8 @@ export class SplatBuffer {
             SphericalHarmonicsDegrees: {
                 0: { BytesPerSplat: 24 },
                 1: { BytesPerSplat: 42 },
-                2: { BytesPerSplat: 72 }
+                2: { BytesPerSplat: 72 },
+                3: { BytesPerSplat: 114 }
             },
         },
         2: {
@@ -157,7 +159,8 @@ export class SplatBuffer {
             SphericalHarmonicsDegrees: {
                 0: { BytesPerSplat: 24 },
                 1: { BytesPerSplat: 33 },
-                2: { BytesPerSplat: 48 }
+                2: { BytesPerSplat: 48 },
+                3: { BytesPerSplat: 69 }
             },
         }
     };
@@ -577,12 +580,16 @@ export class SplatBuffer {
         const shIn3 = [];
         const shIn4 = [];
         const shIn5 = [];
+        const shIn6 = [];
+        const shIn7 = [];
 
         const shOut1 = [];
         const shOut2 = [];
         const shOut3 = [];
         const shOut4 = [];
         const shOut5 = [];
+        const shOut6 = [];
+        const shOut7 = [];
 
         const noop = (v) => v;
 
@@ -726,6 +733,51 @@ export class SplatBuffer {
                         setOutput3(shOut3, outSphericalHarmonicsArray, shDestBase + 15, outputConversionFunc);
                         setOutput3(shOut4, outSphericalHarmonicsArray, shDestBase + 18, outputConversionFunc);
                         setOutput3(shOut5, outSphericalHarmonicsArray, shDestBase + 21, outputConversionFunc);
+
+                        if (outSphericalHarmonicsDegree >= 3) {
+
+                            set3FromArray(shIn1, dataView, 7, 24, this.compressionLevel);
+                            set3FromArray(shIn2, dataView, 7, 25, this.compressionLevel);
+                            set3FromArray(shIn3, dataView, 7, 26, this.compressionLevel);
+                            set3FromArray(shIn4, dataView, 7, 27, this.compressionLevel);
+                            set3FromArray(shIn5, dataView, 7, 28, this.compressionLevel);
+                            set3FromArray(shIn6, dataView, 7, 29, this.compressionLevel);
+                            set3FromArray(shIn7, dataView, 7, 30, this.compressionLevel);
+
+                            if (transform) {
+                                toUncompressedFloatArray3(shIn1, shIn1, this.compressionLevel, minShCoeff, maxShCoeff);
+                                toUncompressedFloatArray3(shIn2, shIn2, this.compressionLevel, minShCoeff, maxShCoeff);
+                                toUncompressedFloatArray3(shIn3, shIn3, this.compressionLevel, minShCoeff, maxShCoeff);
+                                toUncompressedFloatArray3(shIn4, shIn4, this.compressionLevel, minShCoeff, maxShCoeff);
+                                toUncompressedFloatArray3(shIn5, shIn5, this.compressionLevel, minShCoeff, maxShCoeff);
+                                toUncompressedFloatArray3(shIn6, shIn6, this.compressionLevel, minShCoeff, maxShCoeff);
+                                toUncompressedFloatArray3(shIn7, shIn7, this.compressionLevel, minShCoeff, maxShCoeff);
+                                // TODO: Implement rotateSphericalHarmonics7
+                                copy3(shIn1, shOut1);
+                                copy3(shIn2, shOut2);
+                                copy3(shIn3, shOut3);
+                                copy3(shIn4, shOut4);
+                                copy3(shIn5, shOut5);
+                                copy3(shIn6, shOut6);
+                                copy3(shIn7, shOut7);
+                            } else {
+                                copy3(shIn1, shOut1);
+                                copy3(shIn2, shOut2);
+                                copy3(shIn3, shOut3);
+                                copy3(shIn4, shOut4);
+                                copy3(shIn5, shOut5);
+                                copy3(shIn6, shOut6);
+                                copy3(shIn7, shOut7);
+                            }
+
+                            setOutput3(shOut1, outSphericalHarmonicsArray, shDestBase + 24, outputConversionFunc);
+                            setOutput3(shOut2, outSphericalHarmonicsArray, shDestBase + 27, outputConversionFunc);
+                            setOutput3(shOut3, outSphericalHarmonicsArray, shDestBase + 30, outputConversionFunc);
+                            setOutput3(shOut4, outSphericalHarmonicsArray, shDestBase + 33, outputConversionFunc);
+                            setOutput3(shOut5, outSphericalHarmonicsArray, shDestBase + 36, outputConversionFunc);
+                            setOutput3(shOut6, outSphericalHarmonicsArray, shDestBase + 39, outputConversionFunc);
+                            setOutput3(shOut7, outSphericalHarmonicsArray, shDestBase + 42, outputConversionFunc);
+                        }
                     }
                 }
             }
@@ -1063,7 +1115,7 @@ export class SplatBuffer {
             SCALE0: OFFSET_SCALE0, SCALE1: OFFSET_SCALE1, SCALE2: OFFSET_SCALE2,
             ROTATION0: OFFSET_ROT0, ROTATION1: OFFSET_ROT1, ROTATION2: OFFSET_ROT2, ROTATION3: OFFSET_ROT3,
             FDC0: OFFSET_FDC0, FDC1: OFFSET_FDC1, FDC2: OFFSET_FDC2, OPACITY: OFFSET_OPACITY,
-            FRC0: OFFSET_FRC0, FRC9: OFFSET_FRC9,
+            FRC0: OFFSET_FRC0, FRC9: OFFSET_FRC9, FRC24: OFFSET_FRC24,
         } = UncompressedSplatArray.OFFSET;
 
         const compressPositionOffset = (v, compressionScaleFactor, compressionScaleRange) => {
@@ -1119,6 +1171,9 @@ export class SplatBuffer {
                             for (let s = 0; s < 9; s++) shOut[s] = targetSplat[OFFSET_FRC0 + s] || 0;
                             if (sphericalHarmonicsDegree >= 2) {
                                 for (let s = 0; s < 15; s++) shOut[s + 9] = targetSplat[OFFSET_FRC9 + s] || 0;
+                                if (sphericalHarmonicsDegree >= 3) {
+                                    for (let s = 0; s < 21; s++) shOut[s + 24] = targetSplat[OFFSET_FRC24 + s] || 0;
+                                }
                             }
                     }
                 }
@@ -1154,8 +1209,18 @@ export class SplatBuffer {
                                 shOut[s + 9] = compressionLevel === 1 ? toHalfFloat(srcVal) :
                                                toUint8(srcVal, minSphericalHarmonicsCoeff, maxSphericalHarmonicsCoeff);
                             }
+                            const degree2ByteCount = 15 * bytesPerSHComponent;
                             copyBetweenBuffers(shOut.buffer, degree1ByteCount, sectionBuffer,
-                                               sphericalHarmonicsBase + degree1ByteCount, 15 * bytesPerSHComponent);
+                                               sphericalHarmonicsBase + degree1ByteCount, degree2ByteCount);
+                            if (sphericalHarmonicsDegree >= 3) {
+                                for (let s = 0; s < 21; s++) {
+                                    const srcVal = targetSplat[OFFSET_FRC24 + s] || 0;
+                                    shOut[s + 24] = compressionLevel === 1 ? toHalfFloat(srcVal) :
+                                                   toUint8(srcVal, minSphericalHarmonicsCoeff, maxSphericalHarmonicsCoeff);
+                                }
+                                copyBetweenBuffers(shOut.buffer, degree1ByteCount + degree2ByteCount, sectionBuffer,
+                                                   sphericalHarmonicsBase + degree1ByteCount + degree2ByteCount, 21 * bytesPerSHComponent);
+                            }
                         }
                     }
                 }
@@ -1190,7 +1255,7 @@ export class SplatBuffer {
             const splatArray = splatArrays[sa];
             for (let i = 0; i < splatArray.splats.length; i++) {
                 const splat = splatArray.splats[i];
-                for (let sc = UncompressedSplatArray.OFFSET.FRC0; sc < UncompressedSplatArray.OFFSET.FRC23 && sc < splat.length; sc++) {
+                for (let sc = UncompressedSplatArray.OFFSET.FRC0; sc < splat.length; sc++) {
                     if (!minSphericalHarmonicsCoeff || splat[sc] < minSphericalHarmonicsCoeff) {
                         minSphericalHarmonicsCoeff = splat[sc];
                     }

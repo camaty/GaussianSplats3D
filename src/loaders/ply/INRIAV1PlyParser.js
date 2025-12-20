@@ -179,6 +179,11 @@ export class INRIAV1PlyParser {
                         for (let i = 0; i < 15; i++) {
                             newSplat[OFFSET_FRC[9 + i]] = rawSplat[header.sphericalHarmonicsDegree2Fields[i]];
                         }
+                        if (outSphericalHarmonicsDegree >= 3) {
+                            for (let i = 0; i < 21; i++) {
+                                newSplat[OFFSET_FRC[24 + i]] = rawSplat[header.sphericalHarmonicsDegree3Fields[i]];
+                            }
+                        }
                     }
                 }
             }

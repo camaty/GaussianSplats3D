@@ -16,7 +16,7 @@ When I started, web-based viewers were already available -- A WebGL-based viewer
 - Users can convert `.ply` or `.splat` files to the `.ksplat` file format
 - Allows a Three.js scene or object group to be rendered along with the splats
 - Built-in WebXR support
-- Supports 1st and 2nd degree spherical harmonics for view-dependent effects
+- Supports 1st, 2nd, and 3rd degree spherical harmonics for view-dependent effects
 - Focus on optimization:
     - Splats culled prior to sorting & rendering using a custom octree
     - WASM splat sort: Implemented in C++ using WASM SIMD instructions
@@ -48,6 +48,7 @@ Currently there are limits on the number of splats that can be rendered, and tho
 | `0` | ~ 16,000,000
 | `1` | ~ 11,000,000
 | `2` | ~ 8,000,000
+| `3` | ~ 5,000,000
 
 Future work will include optimizing how splat data is packed into data textures, which will help increase these limits.
 
@@ -336,7 +337,7 @@ Advanced `Viewer` parameters
 | `antialiased` |  When true, will perform additional steps during rendering to address artifacts caused by the rendering of gaussians at substantially different resolutions than that at which they were rendered during training. This will only work correctly for models that were trained using a process that utilizes this compensation calculation. For more details: https://github.com/nerfstudio-project/gsplat/pull/117, https://github.com/graphdeco-inria/gaussian-splatting/issues/294#issuecomment-1772688093
 | `focalAdjustment` | Hacky, non-scientific parameter for tweaking focal length related calculations. For scenes with very small gaussians & small details, increasing this value can help improve visual quality. Default value is 1.0.
 | `logLevel` | Verbosity of the console logging. Defaults to `GaussianSplats3D.LogLevel.None`.
-| `sphericalHarmonicsDegree` | Degree of spherical harmonics to utilize in rendering splats (assuming the data is present in the splat scene). Valid values are 0, 1, or 2. Default value is 0.
+| `sphericalHarmonicsDegree` | Degree of spherical harmonics to utilize in rendering splats (assuming the data is present in the splat scene). Valid values are 0, 1, 2, or 3. Default value is 0.
 | `enableOptionalEffects` | When true, allows for usage of extra properties and attributes during rendering for effects such as opacity adjustment. Default is `false` for performance reasons. These properties are separate from transform properties (scale, rotation, position) that are enabled by the `dynamicScene` parameter.
 | `inMemoryCompressionLevel` | Level to compress `.ply` or `.ksplat` files when loading them for direct rendering (not exporting to `.ksplat`). Valid values are the same as `.ksplat` compression levels (0, 1, or 2). Default is 0.
 | `optimizeSplatData` | Reorder splat data in memory after loading is complete to optimize cache utilization. Default is `true`. Does not apply if splat scene is progressively loaded.

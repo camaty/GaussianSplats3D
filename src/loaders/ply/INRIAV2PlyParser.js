@@ -11,8 +11,8 @@ const CodeBookEntryNamesToRead = [
 const CodeBookEntriesToReadIndexes = CodeBookEntryNamesToRead.map((e, i) => i);
 
 const [
-        CB_FEATURES_DC, CB_FEATURES_REST_0, CB_FEATURES_REST_3, CB_OPACITY, CB_SCALING, CB_ROTATION_RE, CB_ROTATION_IM
-      ] = [0, 1, 4, 16, 17, 18, 19];
+        CB_FEATURES_DC, CB_FEATURES_REST_0, CB_FEATURES_REST_3, CB_FEATURES_REST_8, CB_OPACITY, CB_SCALING, CB_ROTATION_RE, CB_ROTATION_IM
+      ] = [0, 1, 4, 9, 16, 17, 18, 19];
 
 const FieldNamesToRead = ['scale_0', 'scale_1', 'scale_2', 'rot_0', 'rot_1', 'rot_2', 'rot_3',
                           'x', 'y', 'z', 'f_dc_0', 'f_dc_1', 'f_dc_2', 'opacity', 'red', 'green', 'blue',
@@ -249,6 +249,12 @@ export class INRIAV2PlyParser {
                     for (let i = 0; i < 15; i++) {
                         const codeBookPage = codeBook[CB_FEATURES_REST_3 + i % 5];
                         newSplat[OFFSET_FRC[9 + i]] = codeBookPage[rawSplat[header.sphericalHarmonicsDegree2Fields[i]]];
+                    }
+                    if (outSphericalHarmonicsDegree >= 3 && header.sphericalHarmonicsDegree >= 3) {
+                        for (let i = 0; i < 21; i++) {
+                            const codeBookPage = codeBook[CB_FEATURES_REST_8 + i % 7];
+                            newSplat[OFFSET_FRC[24 + i]] = codeBookPage[rawSplat[header.sphericalHarmonicsDegree3Fields[i]]];
+                        }
                     }
                 }
             }
