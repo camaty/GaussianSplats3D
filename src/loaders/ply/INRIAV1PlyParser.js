@@ -157,9 +157,12 @@ export class INRIAV1PlyParser {
 
             if (rawSplat[F_DC_0] !== undefined) {
                 const SH_C0 = 0.28209479177387814;
-                newSplat[OFFSET_FDC0] = (0.5 + SH_C0 * rawSplat[F_DC_0]) * 255;
-                newSplat[OFFSET_FDC1] = (0.5 + SH_C0 * rawSplat[F_DC_1]) * 255;
-                newSplat[OFFSET_FDC2] = (0.5 + SH_C0 * rawSplat[F_DC_2]) * 255;
+                const r01 = PlyParserUtils.applyLinearColorOptions01(0.5 + SH_C0 * rawSplat[F_DC_0], colorOptions);
+                const g01 = PlyParserUtils.applyLinearColorOptions01(0.5 + SH_C0 * rawSplat[F_DC_1], colorOptions);
+                const b01 = PlyParserUtils.applyLinearColorOptions01(0.5 + SH_C0 * rawSplat[F_DC_2], colorOptions);
+                newSplat[OFFSET_FDC0] = r01 * 255;
+                newSplat[OFFSET_FDC1] = g01 * 255;
+                newSplat[OFFSET_FDC2] = b01 * 255;
             } else if (rawSplat[RED] !== undefined) {
                 newSplat[OFFSET_FDC0] = PlyParserUtils.applyColorOptions01(rawSplat[RED], colorOptions) * 255;
                 newSplat[OFFSET_FDC1] = PlyParserUtils.applyColorOptions01(rawSplat[GREEN], colorOptions) * 255;

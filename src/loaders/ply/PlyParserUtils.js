@@ -336,4 +336,20 @@ export class PlyParserUtils {
 
         return Math.min(Math.max(v, 0.0), 1.0);
     }
+
+    static applyLinearColorOptions01(colorValue01, colorOptions) {
+        if (colorValue01 === undefined || colorValue01 === null) return 0;
+
+        let v = colorValue01;
+        const exposure = (colorOptions?.exposure === undefined || colorOptions?.exposure === null) ? 1.0 : colorOptions.exposure;
+        const compressHdr = !!colorOptions?.compressHdr;
+
+        v *= exposure;
+
+        if (compressHdr && v > 1.0) {
+            v = v / (1.0 + v);
+        }
+
+        return Math.min(Math.max(v, 0.0), 1.0);
+    }
 }
