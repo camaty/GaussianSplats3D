@@ -191,15 +191,6 @@ export class SplatMaterial {
                 vec3 sh1;
                 vec3 sh2;
                 vec3 sh3;
-                float x;
-                float y;
-                float z;
-                float xx;
-                float yy;
-                float zz;
-                float xy;
-                float yz;
-                float xz;
                 vec4 sampledSH0123;
                 vec4 sampledSH4567;
                 vec4 sampledSH891011;
@@ -325,28 +316,23 @@ export class SplatMaterial {
                         sh2 = sh2 * sh8BitCompressionRangeForScene + vec8BitSHShift;
                         sh3 = sh3 * sh8BitCompressionRangeForScene + vec8BitSHShift;
                     }
-                    x = worldViewDir.x;
-                    y = worldViewDir.y;
-                    z = worldViewDir.z;
+                    float x = worldViewDir.x;
+                    float y = worldViewDir.y;
+                    float z = worldViewDir.z;
                     vColor.rgb += SH_C1 * (-sh1 * y + sh2 * z - sh3 * x);
             `;
-
-            if (maxSphericalHarmonicsDegree >= 2) {
-                vertexShaderSource += `
-                    float xx = x * x;
-                    float yy = y * y;
-                    float zz = z * z;
-                    float xy = x * y;
-                    float yz = y * z;
-                    float xz = x * z;
-                `;
-            }
 
             // Proceed to sampling and rendering 2nd degree spherical harmonics
             if (maxSphericalHarmonicsDegree >= 2) {
 
                 vertexShaderSource += `
                     if (sphericalHarmonicsDegree >= 2) {
+                        float xx = x * x;
+                        float yy = y * y;
+                        float zz = z * z;
+                        float xy = x * y;
+                        float yz = y * z;
+                        float xz = x * z;
                 `;
 
                 // Sample spherical harmonics textures with 2 degrees worth of data for 2nd degree calculations,
