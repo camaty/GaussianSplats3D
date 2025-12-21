@@ -47,6 +47,9 @@ export class SplatMaterial {
         uniform vec2 sphericalHarmonicsTextureSize;
         uniform int sphericalHarmonics8BitMode;
         uniform int sphericalHarmonicsMultiTextureMode;
+        // supersplat parity: a small output pipeline hook.
+        // toneMapMode=0 keeps legacy behavior; non-zero allows HDR-ish headroom (no clamping in VS).
+        uniform int toneMapMode;
         uniform float visibleRegionRadius;
         uniform float visibleRegionFadeStartRadius;
         uniform float firstRenderTime;
@@ -60,6 +63,10 @@ export class SplatMaterial {
         varying vec4 vColor;
         varying vec2 vUv;
         varying vec2 vPosition;
+
+        // supersplat parity: allow pick/outline passes without requiring extra UI.
+        // We keep this as varying so fragment can output exact bytes without relying on float bit tricks.
+        varying vec3 vPickColor;
 
         mat3 quaternionToRotationMatrix(float x, float y, float z, float w) {
             float s = 1.0 / sqrt(w * w + x * x + y * y + z * z);
@@ -120,6 +127,10 @@ export class SplatMaterial {
 
             uvec4 sampledCenterColor = texture(centersColorsTexture, getDataUV(1, 0, centersColorsTextureSize));
             vec3 splatCenter = uintBitsToFloat(uvec3(sampledCenterColor.gba));
+
+            // Encode up to 24-bit splat id into RGB for a simple pick pass (supersplat uses 32-bit; 24-bit is enough for most splat counts).
+            uvec3 pickBytes = (uvec3(splatIndex) >> uvec3(0u, 8u, 16u)) & uvec3(255u);
+            vPickColor = vec3(pickBytes) / 255.0;
 
             uint sceneIndex = uint(0);
             if (sceneCount > 1) {
@@ -460,7 +471,13 @@ export class SplatMaterial {
 
             vertexShaderSource += `
 
-                vColor.rgb = clamp(vColor.rgb, vec3(0.), vec3(1.));
+                // supersplat parity:
+                // - supersplat/PlayCanvas clamps only with max(color,0) right before output.
+                // - clamping here destroys highlights from SH and limits any tonemap.
+                // Keep legacy behavior when toneMapMode==0; otherwise keep headroom.
+                if (toneMapMode == 0) {
+                    vColor.rgb = clamp(vColor.rgb, vec3(0.), vec3(1.));
+                }
 
             }
 
@@ -589,6 +606,12 @@ export class SplatMaterial {
                 'value': 0
             },
             'sphericalHarmonicsMultiTextureMode': {
+                'type': 'i',
+                'value': 0
+            },
+            // supersplat parity hook:
+            // 0 keeps legacy (clamp in VS, no internal tonemap). Non-zero can enable internal tonemap/gamma.
+            'toneMapMode': {
                 'type': 'i',
                 'value': 0
             },

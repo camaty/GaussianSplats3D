@@ -15,7 +15,7 @@ export class SplatMaterial2D {
      * @return {THREE.ShaderMaterial}
      */
     static build(dynamicMode = false, enableOptionalEffects = false, splatScale = 1.0,
-                 pointCloudModeEnabled = false, maxSphericalHarmonicsDegree = 0) {
+                 pointCloudModeEnabled = false, maxSphericalHarmonicsDegree = 0, ditherEnabled = false) {
 
         const customVertexVars = `
             uniform vec2 scaleRotationsTextureSize;
@@ -42,15 +42,26 @@ export class SplatMaterial2D {
             'value': new THREE.Vector2(1024, 1024)
         };
 
+        // supersplat parity knobs (kept optional; caller may set uniforms)
+        uniforms['renderMode'] = { 'type': 'i', 'value': 0 };
+        uniforms['ringSize'] = { 'type': 'f', 'value': 0.0 };
+        uniforms['ditherMode'] = { 'type': 'i', 'value': ditherEnabled ? 1 : 0 };
+        uniforms['ditherJitter'] = { 'type': 'v2', 'value': new THREE.Vector2(0, 0) };
+        uniforms['gammaMode'] = { 'type': 'i', 'value': 1 };
+
         const material = new THREE.ShaderMaterial({
             uniforms: uniforms,
             vertexShader: vertexShaderSource,
             fragmentShader: fragmentShaderSource,
             transparent: true,
             alphaTest: 1.0,
-            blending: THREE.NormalBlending,
+            // Match supersplat/PlayCanvas default: premultiplied alpha output.
+            blending: ditherEnabled ? THREE.NoBlending : THREE.CustomBlending,
+            blendSrc: THREE.OneFactor,
+            blendDst: THREE.OneMinusSrcAlphaFactor,
+            blendEquation: THREE.AddEquation,
             depthTest: true,
-            depthWrite: false,
+            depthWrite: !!ditherEnabled,
             side: THREE.DoubleSide
         });
 
@@ -292,12 +303,43 @@ export class SplatMaterial2D {
 
             uniform vec3 debugColor;
 
+            // supersplat parity controls (optional)
+            uniform int renderMode;     // 0=forward, 1=pick, 2=outline, 3=rings
+            uniform float ringSize;
+            uniform int ditherMode;     // 0=off, 1=IGN opacity dither
+            uniform vec2 ditherJitter;
+            uniform int toneMapMode;    // shared with base VS; here used for output hook
+            uniform int gammaMode;
+
             varying vec4 vColor;
             varying vec2 vUv;
             varying vec2 vPosition;
+            varying vec3 vPickColor;
             varying mat3 vT;
             varying vec2 vQuadCenter;
             varying vec2 vFragCoord;
+
+            // --- helpers (must be outside main() for GLSL ES) ---
+            float ignNoise(vec2 fragCoord, vec2 jitter, float idSeed) {
+                vec3 magic = vec3(0.06711056, 0.00583715, 52.9829189);
+                float noise = fract(magic.z * fract(dot(fragCoord + jitter + vec2(idSeed), magic.xy)));
+                return pow(noise, 2.2);
+            }
+            vec3 decodeGamma(vec3 c) { return pow(c, vec3(2.2)); }
+            vec3 gammaCorrectOutput(vec3 c) { return pow(c + 1e-7, vec3(1.0 / 2.2)); }
+            vec3 toneMapAces(vec3 x) {
+                const float a = 2.51;
+                const float b = 0.03;
+                const float c = 2.43;
+                const float d = 0.59;
+                const float e = 0.14;
+                return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+            }
+            vec3 prepareOutputFromGamma(vec3 gammaColor, int gammaMode, int toneMapMode) {
+                vec3 lin = (gammaMode == 0) ? decodeGamma(gammaColor) : gammaColor;
+                if (toneMapMode == 0) return lin;
+                return gammaCorrectOutput(toneMapAces(lin));
+            }
 
             void main () {
 
@@ -339,7 +381,39 @@ export class SplatMaterial2D {
                 if (test_T < 0.0001)discard;
 
                 float w = alpha * T;
-                gl_FragColor = vec4(vColor.rgb, w);
+
+                // Pick pass: output encoded splat id.
+                if (renderMode == 1) {
+                    gl_FragColor = vec4(vPickColor, 1.0);
+                    return;
+                }
+
+                // Outline pass: simple white silhouette using computed coverage.
+                if (renderMode == 2) {
+                    gl_FragColor = vec4(1.0, 1.0, 1.0, w);
+                    return;
+                }
+
+                // Rings mode: approximate supersplat rings by remapping alpha using a normalized distance proxy.
+                if (renderMode == 3 && ringSize > 0.0) {
+                    float r2 = clamp(rho / 8.0, 0.0, 1.0);
+                    if (r2 < 1.0 - ringSize) {
+                        w = max(0.05, w);
+                    } else {
+                        w = 0.6;
+                    }
+                }
+
+                // Optional opacity dither (IGN). Mirrors supersplat's opacityDither concept.
+                if (ditherMode != 0) {
+                    float noise = ignNoise(gl_FragCoord.xy, ditherJitter, vPickColor.x * 255.0 * 0.013);
+                    if (w < noise) discard;
+                }
+
+                vec3 outColor = prepareOutputFromGamma(max(vColor.rgb, 0.0), gammaMode, toneMapMode);
+
+                // supersplat parity: premultiplied output.
+                gl_FragColor = vec4(outColor * w, w);
             }
         `;
 

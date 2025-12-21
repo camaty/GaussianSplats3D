@@ -18,7 +18,8 @@ export class SplatMaterial3D {
      * @return {THREE.ShaderMaterial}
      */
     static build(dynamicMode = false, enableOptionalEffects = false, antialiased = false, maxScreenSpaceSplatSize = 2048,
-                 splatScale = 1.0, pointCloudModeEnabled = false, maxSphericalHarmonicsDegree = 0, kernel2DSize = 0.3) {
+                 splatScale = 1.0, pointCloudModeEnabled = false, maxSphericalHarmonicsDegree = 0, kernel2DSize = 0.3,
+                 ditherEnabled = false) {
 
         const customVertexVars = `
             uniform vec2 covariancesTextureSize;
@@ -62,15 +63,36 @@ export class SplatMaterial3D {
             'value': 0
         };
 
+        // --- supersplat parity knobs (no UI here; caller may set uniforms) ---
+        // renderMode: 0=forward (default), 1=pick (RGB encodes splat id), 2=outline, 3=rings
+        uniforms['renderMode'] = { 'type': 'i', 'value': 0 };
+        // ringSize: like supersplat's ringSize (0 disables)
+        uniforms['ringSize'] = { 'type': 'f', 'value': 0.0 };
+        // ditherMode: 0 disables, 1 enables IGN-noise opacity dither
+        uniforms['ditherMode'] = { 'type': 'i', 'value': ditherEnabled ? 1 : 0 };
+        // jitter for dither (temporal or per-frame). Default 0.
+        uniforms['ditherJitter'] = { 'type': 'v2', 'value': new THREE.Vector2(0, 0) };
+        // toneMapMode / gammaMode are a small hook to mirror PlayCanvas' prepareOutputFromGamma.
+        // 0 = identity (keep existing Three.js pipeline), 1 = ACES-ish tonemap + sRGB output.
+        uniforms['toneMapMode'] = { 'type': 'i', 'value': 0 };
+        // 0 = decode input gamma (pow 2.2), 1 = pass-through
+        uniforms['gammaMode'] = { 'type': 'i', 'value': 1 };
+
         const material = new THREE.ShaderMaterial({
             uniforms: uniforms,
             vertexShader: vertexShaderSource,
             fragmentShader: fragmentShaderSource,
             transparent: true,
             alphaTest: 1.0,
-            blending: THREE.NormalBlending,
+            // supersplat/PlayCanvas GSplat uses premultiplied alpha output.
+            // In Three.js we express that as (ONE, ONE_MINUS_SRC_ALPHA) blending.
+            blending: ditherEnabled ? THREE.NoBlending : THREE.CustomBlending,
+            blendSrc: THREE.OneFactor,
+            blendDst: THREE.OneMinusSrcAlphaFactor,
+            blendEquation: THREE.AddEquation,
             depthTest: true,
-            depthWrite: false,
+            // Dithered-opacity mode wants depthWrite so we can avoid sorting at the cost of noise.
+            depthWrite: !!ditherEnabled,
             side: THREE.DoubleSide
         });
 
@@ -194,6 +216,10 @@ export class SplatMaterial3D {
             // We use sqrt(8) standard deviations instead of 3 to eliminate more of the splat with a very low opacity.
             vec2 basisVector1 = eigenVector1 * splatScale * min(sqrt8 * sqrt(eigenValue1), ${parseInt(maxScreenSpaceSplatSize)}.0);
             vec2 basisVector2 = eigenVector2 * splatScale * min(sqrt8 * sqrt(eigenValue2), ${parseInt(maxScreenSpaceSplatSize)}.0);
+
+            // supersplat/PlayCanvas: early discard very small splats (saves fill, reduces sparkle).
+            // The PlayCanvas check is based on eigenvalue-derived extents; here we approximate using basis lengths in pixels.
+            if (length(basisVector1) < 2.0 && length(basisVector2) < 2.0) return;
             `;
 
         if (enableOptionalEffects) {
@@ -201,6 +227,18 @@ export class SplatMaterial3D {
                 vColor.a *= splatOpacityFromScene;
             `;
         }
+
+        vertexShaderSource += `
+            // supersplat/PlayCanvas: clipCorner() shrinks the quad to exclude regions where
+            // the gaussian would be below 1/255 alpha. This reduces halo and saves fill.
+            // We apply the same shrink by scaling the quad corner (vPosition) before projection.
+            float clipFactor = 1.0;
+            if (vColor.a > 0.0) {
+                // clip = min(1, sqrt(-log(1/(255*alpha)))/2)
+                clipFactor = min(1.0, sqrt(-log(1.0 / (255.0 * vColor.a))) / 2.0);
+            }
+            vPosition *= clipFactor;
+        `;
 
         vertexShaderSource += `
             vec2 ndcOffset = vec2(vPosition.x * basisVector1 + vPosition.y * basisVector2) *
@@ -226,28 +264,107 @@ export class SplatMaterial3D {
  
             uniform vec3 debugColor;
 
+            // supersplat parity controls (all optional; caller can ignore)
+            uniform int renderMode;     // 0=forward, 1=pick, 2=outline, 3=rings
+            uniform float ringSize;     // rings thickness (0 disables)
+            uniform int ditherMode;     // 0=off, 1=IGN opacity dither
+            uniform vec2 ditherJitter;  // jitter for dither (optional)
+            uniform int toneMapMode;    // 0=identity, 1=ACES-ish + sRGB
+            uniform int gammaMode;      // 0=decodeGamma(pow2.2), 1=pass-through
+
             varying vec4 vColor;
             varying vec2 vUv;
             varying vec2 vPosition;
+            varying vec3 vPickColor;
+
+            // --- helpers (must be outside main() for GLSL ES) ---
+            const float EXP4 = 0.01831563888873418; // exp(-4)
+            const float INV_EXP4 = 1.018657360363774; // 1/(1-exp(-4))
+            const float MIN_ALPHA = 0.00392156862745098; // 1/255
+
+            // supersplat normalizes exp() so alpha hits 0 at quad edge (r2==1).
+            float normExp(float x) {
+                return (exp(x * -4.0) - EXP4) * INV_EXP4;
+            }
+
+            // Opacity dither (IGN). Mirrors supersplat's opacityDither concept.
+            float ignNoise(vec2 fragCoord, vec2 jitter, float idSeed) {
+                vec3 magic = vec3(0.06711056, 0.00583715, 52.9829189);
+                float noise = fract(magic.z * fract(dot(fragCoord + jitter + vec2(idSeed), magic.xy)));
+                return pow(noise, 2.2);
+            }
+
+            // prepareOutputFromGamma: minimal hook mirroring PlayCanvas.
+            vec3 decodeGamma(vec3 c) {
+                return pow(c, vec3(2.2));
+            }
+            vec3 gammaCorrectOutput(vec3 c) {
+                return pow(c + 1e-7, vec3(1.0 / 2.2));
+            }
+            vec3 toneMapAces(vec3 x) {
+                // A small ACES approximation (good enough for parity testing).
+                const float a = 2.51;
+                const float b = 0.03;
+                const float c = 2.43;
+                const float d = 0.59;
+                const float e = 0.14;
+                return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+            }
+            vec3 prepareOutputFromGamma(vec3 gammaColor, int gammaMode, int toneMapMode) {
+                vec3 lin = (gammaMode == 0) ? decodeGamma(gammaColor) : gammaColor;
+                if (toneMapMode == 0) {
+                    return lin;
+                }
+                return gammaCorrectOutput(toneMapAces(lin));
+            }
         `;
 
         fragmentShaderSource += `
             void main () {
-                // Compute the positional squared distance from the center of the splat to the current fragment.
-                float A = dot(vPosition, vPosition);
-                // Since the positional data in vPosition has been scaled by sqrt(8), the squared result will be
-                // scaled by a factor of 8. If the squared result is larger than 8, it means it is outside the ellipse
-                // defined by the rectangle formed by vPosition. It also means it's farther
-                // away than sqrt(8) standard deviations from the mean.
-                if (A > 8.0) discard;
-                vec3 color = vColor.rgb;
+                // --- supersplat/PlayCanvas gsplat parity ---
+                // NOTE: vPosition has been scaled by sqrt(8) in the vertex shader.
+                // Let r2 = dot(uv,uv) in [-1,1]^2 space. Then dot(vPosition,vPosition) = 8*r2.
+                float A8 = dot(vPosition, vPosition);
+                float r2 = A8 / 8.0;
+                if (r2 > 1.0) discard;
 
-                // Since the rendered splat is scaled by sqrt(8), the inverse covariance matrix that is part of
-                // the gaussian formula becomes the identity matrix. We're then left with (X - mean) * (X - mean),
-                // and since 'mean' is zero, we have X * X, which is the same as A:
-                float opacity = exp(-0.5 * A) * vColor.a;
+                // Pick pass: output encoded splat id (24-bit RGB).
+                if (renderMode == 1) {
+                    gl_FragColor = vec4(vPickColor, 1.0);
+                    return;
+                }
 
-                gl_FragColor = vec4(color.rgb, opacity);
+                // Outline pass: mimic supersplat outline alpha curve.
+                if (renderMode == 2) {
+                    float oa = exp(-r2 * 4.0) * vColor.a;
+                    gl_FragColor = vec4(1.0, 1.0, 1.0, oa);
+                    return;
+                }
+
+                float alpha = normExp(r2) * vColor.a;
+                if (alpha < MIN_ALPHA) discard;
+
+                // Rings mode: replicate supersplat's debug rings (alpha remap).
+                if (renderMode == 3 && ringSize > 0.0) {
+                    if (r2 < 1.0 - ringSize) {
+                        alpha = max(0.05, alpha);
+                    } else {
+                        alpha = 0.6;
+                    }
+                }
+
+                // Opacity dither: supersplat uses opacityDither(alpha, id*0.013) with IGN noise option.
+                // We implement IGN (no texture) for portability.
+                if (ditherMode != 0) {
+                    float noise = ignNoise(gl_FragCoord.xy, ditherJitter, vPickColor.x * 255.0 * 0.013);
+                    if (alpha < noise) discard;
+                }
+
+                // Default keeps legacy Three.js output pipeline unless toneMapMode != 0.
+                vec3 color = prepareOutputFromGamma(max(vColor.rgb, 0.0), gammaMode, toneMapMode);
+
+                // Premultiplied output (supersplat/PlayCanvas GSplat).
+                gl_FragColor = vec4(color * alpha, alpha);
             }
         `;
 
