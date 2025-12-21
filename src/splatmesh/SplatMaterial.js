@@ -211,25 +211,22 @@ export class SplatMaterial {
             if (maxSphericalHarmonicsDegree === 1) {
                 vertexShaderSource += `
                     if (sphericalHarmonicsMultiTextureMode == 0) {
-                        vec2 shUV = getDataUVF(nearestEvenIndex, 2.5, doubleOddOffset, sphericalHarmonicsTextureSize);
-                        vec4 sampledSH0123 = texture(sphericalHarmonicsTexture, shUV);
-                        shUV = getDataUVF(nearestEvenIndex, 2.5, doubleOddOffset + uint(1), sphericalHarmonicsTextureSize);
-                        vec4 sampledSH4567 = texture(sphericalHarmonicsTexture, shUV);
-                        shUV = getDataUVF(nearestEvenIndex, 2.5, doubleOddOffset + uint(2), sphericalHarmonicsTextureSize);
-                        vec4 sampledSH891011 = texture(sphericalHarmonicsTexture, shUV);
-                        sh1 = vec3(sampledSH0123.rgb) * (1.0 - fOddOffset) + vec3(sampledSH0123.ba, sampledSH4567.r) * fOddOffset;
-                        sh2 = vec3(sampledSH0123.a, sampledSH4567.rg) * (1.0 - fOddOffset) + vec3(sampledSH4567.gba) * fOddOffset;
-                        sh3 = vec3(sampledSH4567.ba, sampledSH891011.r) * (1.0 - fOddOffset) + vec3(sampledSH891011.rgb) * fOddOffset;
+                        // Degree-1 SH is packed contiguously as padded float components per splat:
+                        // 12 components (3 RGBA texels) per splat: [0..8] data, [9..11] padding.
+                        vec4 sampledSH0123 = texture(sphericalHarmonicsTexture, getDataUV(3, 0, sphericalHarmonicsTextureSize));
+                        vec4 sampledSH4567 = texture(sphericalHarmonicsTexture, getDataUV(3, 1, sphericalHarmonicsTextureSize));
+                        vec4 sampledSH891011 = texture(sphericalHarmonicsTexture, getDataUV(3, 2, sphericalHarmonicsTextureSize));
+                        sh1 = sampledSH0123.rgb;
+                        sh2 = vec3(sampledSH0123.a, sampledSH4567.rg);
+                        sh3 = vec3(sampledSH4567.ba, sampledSH891011.r);
                     } else {
-                        vec2 sampledSH01R = texture(sphericalHarmonicsTextureR, getDataUV(2, 0, sphericalHarmonicsTextureSize)).rg;
-                        vec2 sampledSH23R = texture(sphericalHarmonicsTextureR, getDataUV(2, 1, sphericalHarmonicsTextureSize)).rg;
-                        vec2 sampledSH01G = texture(sphericalHarmonicsTextureG, getDataUV(2, 0, sphericalHarmonicsTextureSize)).rg;
-                        vec2 sampledSH23G = texture(sphericalHarmonicsTextureG, getDataUV(2, 1, sphericalHarmonicsTextureSize)).rg;
-                        vec2 sampledSH01B = texture(sphericalHarmonicsTextureB, getDataUV(2, 0, sphericalHarmonicsTextureSize)).rg;
-                        vec2 sampledSH23B = texture(sphericalHarmonicsTextureB, getDataUV(2, 1, sphericalHarmonicsTextureSize)).rg;
-                        sh1 = vec3(sampledSH01R.rg, sampledSH23R.r);
-                        sh2 = vec3(sampledSH01G.rg, sampledSH23G.r);
-                        sh3 = vec3(sampledSH01B.rg, sampledSH23B.r);
+                        // Multi-texture mode stores one color channel per texture, 1 RGBA texel per splat.
+                        vec4 sampledR = texture(sphericalHarmonicsTextureR, getDataUV(1, 0, sphericalHarmonicsTextureSize));
+                        vec4 sampledG = texture(sphericalHarmonicsTextureG, getDataUV(1, 0, sphericalHarmonicsTextureSize));
+                        vec4 sampledB = texture(sphericalHarmonicsTextureB, getDataUV(1, 0, sphericalHarmonicsTextureSize));
+                        sh1 = vec3(sampledR.r, sampledG.r, sampledB.r);
+                        sh2 = vec3(sampledR.g, sampledG.g, sampledB.g);
+                        sh3 = vec3(sampledR.b, sampledG.b, sampledB.b);
                     }
                 `;
             // Sample spherical harmonics textures with 2 degrees worth of data for 1st degree calculations, and store in sh1, sh2, and sh3
