@@ -3,7 +3,7 @@ import { Constants } from '../Constants.js';
 
 export class SplatMaterial {
 
-    static buildVertexShaderBase(dynamicMode = false, enableOptionalEffects = false, maxSphericalHarmonicsDegree = 0, customVars = '') {
+    static buildVertexShaderBase(dynamicMode = false, enableOptionalEffects = false, maxSphericalHarmonicsDegree = 0, customVars = '', perPixelSH = false) {
         let vertexShaderSource = `
         precision highp float;
         #include <common>
@@ -70,6 +70,23 @@ export class SplatMaterial {
         // supersplat parity: allow pick/outline passes without requiring extra UI.
         // We keep this as varying so fragment can output exact bytes without relying on float bit tricks.
         varying vec3 vPickColor;
+
+        varying vec4 vClipPos;
+        varying vec3 vSh1;
+        varying vec3 vSh2;
+        varying vec3 vSh3;
+        varying vec3 vSh4;
+        varying vec3 vSh5;
+        varying vec3 vSh6;
+        varying vec3 vSh7;
+        varying vec3 vSh8;
+        varying vec3 vSh9;
+        varying vec3 vSh10;
+        varying vec3 vSh11;
+        varying vec3 vSh12;
+        varying vec3 vSh13;
+        varying vec3 vSh14;
+        varying vec3 vSh15;
 
         mat3 quaternionToRotationMatrix(float x, float y, float z, float w) {
             float s = 1.0 / sqrt(w * w + x * x + y * y + z * z);
@@ -321,24 +338,41 @@ export class SplatMaterial {
                         sh2 = sh2 * sh8BitCompressionRangeForScene + vec8BitSHShift;
                         sh3 = sh3 * sh8BitCompressionRangeForScene + vec8BitSHShift;
                     }
+            `;
+
+            if (perPixelSH) {
+                vertexShaderSource += `
+                    vSh1 = sh1;
+                    vSh2 = sh2;
+                    vSh3 = sh3;
+                `;
+            } else {
+                vertexShaderSource += `
                     float x = worldViewDir.x;
                     float y = worldViewDir.y;
                     float z = worldViewDir.z;
                     vColor.rgb += SH_C1 * (-sh1 * y + sh2 * z - sh3 * x);
-            `;
+                `;
+            }
+
 
             // Proceed to sampling and rendering 2nd degree spherical harmonics
             if (maxSphericalHarmonicsDegree >= 2) {
 
                 vertexShaderSource += `
                     if (sphericalHarmonicsDegree >= 2) {
+                `;
+
+                if (!perPixelSH) {
+                    vertexShaderSource += `
                         float xx = x * x;
                         float yy = y * y;
                         float zz = z * z;
                         float xy = x * y;
                         float yz = y * z;
                         float xz = x * z;
-                `;
+                    `;
+                }
 
                 // Sample spherical harmonics textures with 2 degrees worth of data for 2nd degree calculations,
                 // and store in sh4, sh5, sh6, sh7, and sh8
@@ -397,13 +431,28 @@ export class SplatMaterial {
                             sh7 = sh7 * sh8BitCompressionRangeForScene + vec8BitSHShift;
                             sh8 = sh8 * sh8BitCompressionRangeForScene + vec8BitSHShift;
                         }
+                `;
 
+                if (perPixelSH) {
+                    vertexShaderSource += `
+                        vSh4 = sh4;
+                        vSh5 = sh5;
+                        vSh6 = sh6;
+                        vSh7 = sh7;
+                        vSh8 = sh8;
+                    `;
+                } else {
+                    vertexShaderSource += `
                         vColor.rgb +=
                             (SH_C2[0] * xy) * sh4 +
                             (SH_C2[1] * yz) * sh5 +
                             (SH_C2[2] * (2.0 * zz - xx - yy)) * sh6 +
                             (SH_C2[3] * xz) * sh7 +
                             (SH_C2[4] * (xx - yy)) * sh8;
+                    `;
+                }
+
+                vertexShaderSource += `
                     }
                 `;
             }
@@ -413,13 +462,18 @@ export class SplatMaterial {
 
                 vertexShaderSource += `
                     if (sphericalHarmonicsDegree >= 3) {
+                `;
+
+                if (!perPixelSH) {
+                    vertexShaderSource += `
                         float xx = x * x;
                         float yy = y * y;
                         float zz = z * z;
                         float xy = x * y;
                         float yz = y * z;
                         float xz = x * z;
-                `;
+                    `;
+                }
 
                 // Sample spherical harmonics textures with 3 degrees worth of data for 3rd degree calculations,
                 // and store in sh9, sh10, sh11, sh12, sh13, sh14, and sh15
@@ -474,7 +528,20 @@ export class SplatMaterial {
                             sh14 = sh14 * sh8BitCompressionRangeForScene + vec8BitSHShift;
                             sh15 = sh15 * sh8BitCompressionRangeForScene + vec8BitSHShift;
                         }
+                `;
 
+                if (perPixelSH) {
+                    vertexShaderSource += `
+                        vSh9 = sh9;
+                        vSh10 = sh10;
+                        vSh11 = sh11;
+                        vSh12 = sh12;
+                        vSh13 = sh13;
+                        vSh14 = sh14;
+                        vSh15 = sh15;
+                    `;
+                } else {
+                    vertexShaderSource += `
                         vColor.rgb +=
                             (SH_C3[0] * y * (3.0 * xx - yy)) * sh9 +
                             (SH_C3[1] * xy * z) * sh10 +
@@ -483,6 +550,10 @@ export class SplatMaterial {
                             (SH_C3[4] * x * (4.0 * zz - xx - yy)) * sh13 +
                             (SH_C3[5] * z * (xx - yy)) * sh14 +
                             (SH_C3[6] * x * (xx - 3.0 * yy)) * sh15;
+                    `;
+                }
+
+                vertexShaderSource += `
                     }
                 `;
             }
@@ -594,6 +665,14 @@ export class SplatMaterial {
             'inverseFocalAdjustment': {
                 'type': 'f',
                 'value': 1.0
+            },
+            'inverseViewMatrix': {
+                'type': 'm4',
+                'value': new THREE.Matrix4()
+            },
+            'inverseProjectionMatrix': {
+                'type': 'm4',
+                'value': new THREE.Matrix4()
             },
             'viewport': {
                 'type': 'v2',

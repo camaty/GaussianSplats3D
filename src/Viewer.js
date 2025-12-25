@@ -680,7 +680,8 @@ export class Viewer {
 
                 this.adjustForWebXRStereo(renderDimensions);
                 this.splatMesh.updateUniforms(renderDimensions, focalLengthX * focalAdjustment, focalLengthY * focalAdjustment,
-                                              this.camera.isOrthographicCamera, this.camera.zoom || 1.0, inverseFocalAdjustment);
+                                              this.camera.isOrthographicCamera, this.camera.zoom || 1.0, inverseFocalAdjustment,
+                                              this.camera.matrixWorld, this.camera.projectionMatrixInverse);
             }
         };
 

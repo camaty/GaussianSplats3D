@@ -1268,7 +1268,8 @@ export class SplatMesh extends THREE.Mesh {
         const viewport = new THREE.Vector2();
 
         return function(renderDimensions, cameraFocalLengthX, cameraFocalLengthY,
-                        orthographicMode, orthographicZoom, inverseFocalAdjustment) {
+                        orthographicMode, orthographicZoom, inverseFocalAdjustment,
+                        inverseViewMatrix, inverseProjectionMatrix) {
             const splatCount = this.getSplatCount();
             if (splatCount > 0) {
                 viewport.set(renderDimensions.x * this.devicePixelRatio,
@@ -1279,6 +1280,12 @@ export class SplatMesh extends THREE.Mesh {
                 this.material.uniforms.orthographicMode.value = orthographicMode ? 1 : 0;
                 this.material.uniforms.orthoZoom.value = orthographicZoom;
                 this.material.uniforms.inverseFocalAdjustment.value = inverseFocalAdjustment;
+                if (inverseViewMatrix) {
+                    this.material.uniforms.inverseViewMatrix.value.copy(inverseViewMatrix);
+                }
+                if (inverseProjectionMatrix) {
+                    this.material.uniforms.inverseProjectionMatrix.value.copy(inverseProjectionMatrix);
+                }
                 if (this.dynamicMode) {
                     for (let i = 0; i < this.scenes.length; i++) {
                         this.material.uniforms.transforms.value[i].copy(this.getScene(i).transform);

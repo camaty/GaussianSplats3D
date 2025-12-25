@@ -28,10 +28,10 @@ export class SplatMaterial3D {
         `;
 
         let vertexShaderSource = SplatMaterial.buildVertexShaderBase(dynamicMode, enableOptionalEffects,
-                                                                     maxSphericalHarmonicsDegree, customVertexVars);
+                                                                     maxSphericalHarmonicsDegree, customVertexVars, true);
         vertexShaderSource += SplatMaterial3D.buildVertexShaderProjection(antialiased, enableOptionalEffects,
                                                                           maxScreenSpaceSplatSize, kernel2DSize);
-        const fragmentShaderSource = SplatMaterial3D.buildFragmentShader();
+        const fragmentShaderSource = SplatMaterial3D.buildFragmentShader(maxSphericalHarmonicsDegree);
 
         const uniforms = SplatMaterial.getUniforms(dynamicMode, enableOptionalEffects,
                                                    maxSphericalHarmonicsDegree, splatScale, pointCloudModeEnabled);
@@ -186,6 +186,7 @@ export class SplatMaterial3D {
             // PlayCanvas gsplatCornerVS parity: offset is computed in clip space and added to clipCenter.
             vec2 cornerOffset = (vPosition.x * v1 + vPosition.y * v2) * c;
             gl_Position = clipCenter + vec4(cornerOffset, 0.0, 0.0);
+            vClipPos = gl_Position;
             vPosition *= sqrt8;
         `;
 
@@ -195,8 +196,8 @@ export class SplatMaterial3D {
         return vertexShaderSource;
     }
 
-    static buildFragmentShader() {
-        return `
+    static buildFragmentShader(maxSphericalHarmonicsDegree = 0) {
+        let fragmentShaderSource = `
             precision highp float;
             #include <common>
  
@@ -208,12 +209,49 @@ export class SplatMaterial3D {
             uniform int toneMapMode;
             uniform int gammaMode;
             uniform float exposure;
+            uniform mat4 inverseViewMatrix;
+            uniform mat4 inverseProjectionMatrix;
 
             varying vec4 vColor;
             varying vec2 vUv;
             varying vec2 vPosition;
             varying vec3 vPickColor;
             varying float vDitherId;
+            varying vec4 vClipPos;
+
+            ${maxSphericalHarmonicsDegree >= 1 ? `
+            varying vec3 vSh1;
+            varying vec3 vSh2;
+            varying vec3 vSh3;
+            ` : ''}
+            ${maxSphericalHarmonicsDegree >= 2 ? `
+            varying vec3 vSh4;
+            varying vec3 vSh5;
+            varying vec3 vSh6;
+            varying vec3 vSh7;
+            varying vec3 vSh8;
+            ` : ''}
+            ${maxSphericalHarmonicsDegree >= 3 ? `
+            varying vec3 vSh9;
+            varying vec3 vSh10;
+            varying vec3 vSh11;
+            varying vec3 vSh12;
+            varying vec3 vSh13;
+            varying vec3 vSh14;
+            varying vec3 vSh15;
+            ` : ''}
+
+            const float SH_C1 = 0.4886025119029199f;
+            const float SH_C2[5] = float[](1.0925484, -1.0925484, 0.3153916, -1.0925484, 0.5462742);
+            const float SH_C3[7] = float[](
+                -0.5900435899266435,
+                2.890611442640554,
+                -0.4570457994644658,
+                0.3731763325901154,
+                -0.4570457994644658,
+                1.445305721320277,
+                -0.5900435899266435
+            );
 
             // --- FIXED: Helpers moved outside main() ---
             const float EXP4 = 0.01831563888873418;
@@ -310,9 +348,54 @@ export class SplatMaterial3D {
                     if (alpha < noise) discard;
                 }
 
-                vec3 color = prepareOutputFromGamma(max(vColor.rgb, 0.0), gammaMode, toneMapMode, exposure);
+                vec3 finalColor = vColor.rgb;
+
+                // Calculate World View Direction per pixel
+                vec3 ndc = vClipPos.xyz / vClipPos.w;
+                vec4 viewPos = inverseProjectionMatrix * vec4(ndc, 1.0);
+                viewPos /= viewPos.w;
+                vec3 viewDir = normalize(viewPos.xyz);
+                vec3 worldViewDir = normalize((inverseViewMatrix * vec4(viewDir, 0.0)).xyz);
+                
+                float x = worldViewDir.x;
+                float y = worldViewDir.y;
+                float z = worldViewDir.z;
+
+                ${maxSphericalHarmonicsDegree >= 1 ? `
+                    finalColor += SH_C1 * (-vSh1 * y + vSh2 * z - vSh3 * x);
+                ` : ''}
+
+                ${maxSphericalHarmonicsDegree >= 2 ? `
+                    float xx = x * x;
+                    float yy = y * y;
+                    float zz = z * z;
+                    float xy = x * y;
+                    float yz = y * z;
+                    float xz = x * z;
+
+                    finalColor +=
+                        (SH_C2[0] * xy) * vSh4 +
+                        (SH_C2[1] * yz) * vSh5 +
+                        (SH_C2[2] * (2.0 * zz - xx - yy)) * vSh6 +
+                        (SH_C2[3] * xz) * vSh7 +
+                        (SH_C2[4] * (xx - yy)) * vSh8;
+                ` : ''}
+
+                ${maxSphericalHarmonicsDegree >= 3 ? `
+                    finalColor +=
+                        (SH_C3[0] * y * (3.0 * xx - yy)) * vSh9 +
+                        (SH_C3[1] * xy * z) * vSh10 +
+                        (SH_C3[2] * y * (4.0 * zz - xx - yy)) * vSh11 +
+                        (SH_C3[3] * z * (2.0 * zz - 3.0 * xx - 3.0 * yy)) * vSh12 +
+                        (SH_C3[4] * x * (4.0 * zz - xx - yy)) * vSh13 +
+                        (SH_C3[5] * z * (xx - yy)) * vSh14 +
+                        (SH_C3[6] * x * (xx - 3.0 * yy)) * vSh15;
+                ` : ''}
+
+                vec3 color = prepareOutputFromGamma(max(finalColor, 0.0), gammaMode, toneMapMode, exposure);
                 gl_FragColor = vec4(color * alpha, alpha);
             }
         `;
+        return fragmentShaderSource;
     }
 }
