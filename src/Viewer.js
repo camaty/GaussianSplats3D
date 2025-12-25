@@ -1855,6 +1855,7 @@ export class Viewer {
         const lastSortViewPos = new THREE.Vector3();
         const sortViewOffset = new THREE.Vector3();
         const queuedSorts = [];
+        const lastSplatMeshMatrixWorld = new THREE.Matrix4();
 
         const partialSorts = [
             {
@@ -1879,6 +1880,8 @@ export class Viewer {
                 return Promise.resolve(false);
             }
 
+            this.splatMesh.updateMatrixWorld(true);
+
             let angleDiff = 0;
             let positionDiff = 0;
             let needsRefreshForRotation = false;
@@ -1892,7 +1895,8 @@ export class Viewer {
                 if (!this.splatMesh.dynamicMode && queuedSorts.length === 0) {
                     if (angleDiff <= 0.99) needsRefreshForRotation = true;
                     if (positionDiff >= 1.0) needsRefreshForPosition = true;
-                    if (!needsRefreshForRotation && !needsRefreshForPosition) return Promise.resolve(false);
+                    const splatMeshMatrixChanged = !lastSplatMeshMatrixWorld.equals(this.splatMesh.matrixWorld);
+                    if (!needsRefreshForRotation && !needsRefreshForPosition && !splatMeshMatrixChanged) return Promise.resolve(false);
                 }
             }
 
@@ -1969,6 +1973,7 @@ export class Viewer {
                 if (queuedSorts.length === 0) {
                     lastSortViewPos.copy(this.camera.position);
                     lastSortViewDir.copy(sortViewDir);
+                    lastSplatMeshMatrixWorld.copy(this.splatMesh.matrixWorld);
                 }
 
                 return true;
