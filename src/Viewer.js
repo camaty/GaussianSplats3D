@@ -356,9 +356,15 @@ export class Viewer {
 
             this.renderer = new THREE.WebGLRenderer({
                 antialias: false,
-                precision: 'highp'
+                precision: 'highp',
+                alpha: true,
+                premultipliedAlpha: true
             });
             this.renderer.setPixelRatio(this.devicePixelRatio);
+            // PlayCanvas/supersplat parity: shader already outputs the intended gamma/tonemap result.
+            // Avoid Three.js applying an additional output transform.
+            this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+            this.renderer.toneMapping = THREE.NoToneMapping;
             this.renderer.autoClear = true;
             this.renderer.setClearColor(new THREE.Color( 0x000000 ), 0.0);
             this.renderer.setSize(renderDimensions.x, renderDimensions.y);

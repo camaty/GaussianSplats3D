@@ -10,6 +10,7 @@ export class SplatMaterial3D {
                  splatScale = 1.0, pointCloudModeEnabled = false, maxSphericalHarmonicsDegree = 0, kernel2DSize = 0.3,
                  ditherEnabled = false) {
 
+
         const customVertexVars = `
             uniform vec2 covariancesTextureSize;
             uniform highp sampler2D covariancesTexture;
@@ -45,8 +46,11 @@ export class SplatMaterial3D {
         uniforms['ringSize'] = { 'type': 'f', 'value': 0.0 };
         uniforms['ditherMode'] = { 'type': 'i', 'value': ditherEnabled ? 1 : 0 };
         uniforms['ditherJitter'] = { 'type': 'v2', 'value': new THREE.Vector2(0, 0) };
-        uniforms['toneMapMode'] = { 'type': 'i', 'value': 0 };
+        // Match PlayCanvas/supersplat defaults: TONEMAP=LINEAR, GAMMA=SRGB, exposure=1.
+        // These settings output gamma-space color (no implicit sRGB framebuffer conversion).
+        uniforms['toneMapMode'] = { 'type': 'i', 'value': 1 };
         uniforms['gammaMode'] = { 'type': 'i', 'value': 1 };
+        uniforms['exposure'] = { 'type': 'f', 'value': 1.0 };
 
         const material = new THREE.ShaderMaterial({
             uniforms: uniforms,
@@ -74,9 +78,14 @@ export class SplatMaterial3D {
             vec3 cov3D_M22_M23_M33;
             if (covariancesAreHalfFloat == 0) {
                 sampledCovarianceA = texture(covariancesTexture, getDataUVF(nearestEvenIndex, 1.5, oddOffset, covariancesTextureSize));
-                sampledCovarianceB = texture(covariancesTexture, getDataUVF(nearestEvenIndex, 1.5, oddOffset + uint(1), covariancesTextureSize));
-                cov3D_M11_M12_M13 = vec3(sampledCovarianceA.rgb) * (1.0 - fOddOffset) + vec3(sampledCovarianceA.ba, sampledCovarianceB.r) * fOddOffset;
-                cov3D_M22_M23_M33 = vec3(sampledCovarianceA.a, sampledCovarianceB.rg) * (1.0 - fOddOffset) + vec3(sampledCovarianceB.gba) * fOddOffset;
+                sampledCovarianceB = texture(
+                    covariancesTexture,
+                    getDataUVF(nearestEvenIndex, 1.5, oddOffset + uint(1), covariancesTextureSize)
+                );
+                cov3D_M11_M12_M13 = vec3(sampledCovarianceA.rgb) * (1.0 - fOddOffset) +
+                                    vec3(sampledCovarianceA.ba, sampledCovarianceB.r) * fOddOffset;
+                cov3D_M22_M23_M33 = vec3(sampledCovarianceA.a, sampledCovarianceB.rg) * (1.0 - fOddOffset) +
+                                    vec3(sampledCovarianceB.gba) * fOddOffset;
             } else {
                 uvec4 sampledCovarianceU = texture(covariancesTextureHalfFloat, getDataUV(1, 0, covariancesTextureSize));
                 fromCovarianceHalfFloatV4(sampledCovarianceU, sampledCovarianceA, sampledCovarianceB);
@@ -90,17 +99,17 @@ export class SplatMaterial3D {
                 cov3D_M11_M12_M13.z, cov3D_M22_M23_M33.y, cov3D_M22_M23_M33.z
             );
 
-            mat3 J;
-            if (orthographicMode == 1) {
-                J = transpose(mat3(orthoZoom, 0.0, 0.0, 0.0, orthoZoom, 0.0, 0.0, 0.0, 0.0));
-            } else {
-                float s = 1.0 / (viewCenter.z * viewCenter.z);
-                J = mat3(
-                    focal.x / viewCenter.z, 0., -(focal.x * viewCenter.x) * s,
-                    0., focal.y / viewCenter.z, -(focal.y * viewCenter.y) * s,
-                    0., 0., 0.
-                );
-            }
+            // PlayCanvas gsplatCornerVS parity: use scalar focal in pixels derived from viewport.x and projection[0][0].
+            // This intentionally uses the same J1 for both X/Y to match engine behavior.
+            float focalPx = viewport.x * projectionMatrix[0][0];
+            vec3 v = (orthographicMode == 1) ? vec3(0.0, 0.0, 1.0) : (viewCenter.xyz / viewCenter.w);
+            float J1 = focalPx / v.z;
+            vec2 J2 = -J1 / v.z * v.xy;
+            mat3 J = mat3(
+                J1, 0.0, J2.x,
+                0.0, J1, J2.y,
+                0.0, 0.0, 0.0
+            );
 
             mat3 W = transpose(mat3(transformModelViewMatrix));
             mat3 T = W * J;
@@ -115,7 +124,6 @@ export class SplatMaterial3D {
                 cov2Dm[1][1] += ${kernel2DSize};
                 float detBlur = cov2Dm[0][0] * cov2Dm[1][1] - cov2Dm[0][1] * cov2Dm[0][1];
                 vColor.a *= sqrt(max(detOrig / detBlur, 0.0));
-                if (vColor.a < minAlpha) return;
             `;
         } else {
             vertexShaderSource += `
@@ -126,30 +134,46 @@ export class SplatMaterial3D {
         // ---------------------------------------------------
 
         vertexShaderSource += `
-            vec3 cov2Dv = vec3(cov2Dm[0][0], cov2Dm[0][1], cov2Dm[1][1]);
-            float a = cov2Dv.x;
-            float d = cov2Dv.z;
-            float b = cov2Dv.y;
-            float D = a * d - b * b;
-            float trace = a + d;
-            float traceOver2 = 0.5 * trace;
-            float term2 = sqrt(max(0.1f, traceOver2 * traceOver2 - D));
-            float eigenValue1 = traceOver2 + term2;
-            float eigenValue2 = traceOver2 - term2;
+            // Supersplat/PlayCanvas parity: compute screen-space ellipse axes from projected covariance.
+            // This avoids subtle scaling differences that show up as blur/softness.
+            float diagonal1 = cov2Dm[0][0];
+            float offDiagonal = cov2Dm[0][1];
+            float diagonal2 = cov2Dm[1][1];
+
+            float mid = 0.5 * (diagonal1 + diagonal2);
+            float radius = length(vec2((diagonal1 - diagonal2) / 2.0, offDiagonal));
+            float lambda1 = mid + radius;
+            float lambda2 = max(mid - radius, 0.1);
+
+            float vmin = min(1024.0, min(viewport.x, viewport.y));
+
+            float l1 = 2.0 * min(sqrt(2.0 * lambda1), vmin);
+            float l2 = 2.0 * min(sqrt(2.0 * lambda2), vmin);
 
             if (pointCloudModeEnabled == 1) {
-                eigenValue1 = eigenValue2 = 0.2;
+                l1 = l2 = 2.0;
             }
 
-            if (eigenValue2 <= 0.0) return;
+            // Apply global splatScale the same way as the previous basis-vector approach.
+            l1 *= splatScale;
+            l2 *= splatScale;
 
-            vec2 eigenVector1 = normalize(vec2(b, eigenValue1 - a));
-            vec2 eigenVector2 = vec2(eigenVector1.y, -eigenVector1.x);
+            // Early-out gaussians smaller than 2 pixels.
+            if (l1 < 2.0 && l2 < 2.0) {
+                gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+                return;
+            }
 
-            vec2 basisVector1 = eigenVector1 * splatScale * min(sqrt8 * sqrt(eigenValue1), ${parseInt(maxScreenSpaceSplatSize)}.0);
-            vec2 basisVector2 = eigenVector2 * splatScale * min(sqrt8 * sqrt(eigenValue2), ${parseInt(maxScreenSpaceSplatSize)}.0);
+            // Frustum culling in clip space (PlayCanvas-style).
+            vec2 c = clipCenter.ww / viewport;
+            if (any(greaterThan(abs(clipCenter.xy) - vec2(max(l1, l2)) * c, clipCenter.ww))) {
+                gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+                return;
+            }
 
-            if (length(basisVector1) < 2.0 && length(basisVector2) < 2.0) return;
+            vec2 diagonalVector = normalize(vec2(offDiagonal, lambda1 - diagonal1));
+            vec2 v1 = l1 * diagonalVector;
+            vec2 v2 = l2 * vec2(diagonalVector.y, -diagonalVector.x);
         `;
 
         if (enableOptionalEffects) {
@@ -159,17 +183,9 @@ export class SplatMaterial3D {
         }
 
         vertexShaderSource += `
-            float clipFactor = 1.0;
-            if (vColor.a > 0.0) {
-                clipFactor = min(1.0, sqrt(-log(1.0 / (255.0 * vColor.a))) / 2.0);
-            }
-            vPosition *= clipFactor;
-
-            vec2 ndcOffset = vec2(vPosition.x * basisVector1 + vPosition.y * basisVector2) *
-                             basisViewport * 2.0 * inverseFocalAdjustment;
-
-            vec4 quadPos = vec4(ndcCenter.xy + ndcOffset, ndcCenter.z, 1.0);
-            gl_Position = quadPos;
+            // PlayCanvas gsplatCornerVS parity: offset is computed in clip space and added to clipCenter.
+            vec2 cornerOffset = (vPosition.x * v1 + vPosition.y * v2) * c;
+            gl_Position = clipCenter + vec4(cornerOffset, 0.0, 0.0);
             vPosition *= sqrt8;
         `;
 
@@ -191,16 +207,18 @@ export class SplatMaterial3D {
             uniform vec2 ditherJitter;
             uniform int toneMapMode;
             uniform int gammaMode;
+            uniform float exposure;
 
             varying vec4 vColor;
             varying vec2 vUv;
             varying vec2 vPosition;
             varying vec3 vPickColor;
+            varying float vDitherId;
 
             // --- FIXED: Helpers moved outside main() ---
             const float EXP4 = 0.01831563888873418;
             const float INV_EXP4 = 1.018657360363774;
-            const float MIN_ALPHA = 0.00392156862745098;
+            // supersplat does not discard based on low alpha here.
 
             float normExp(float x) {
                 return (exp(x * -4.0) - EXP4) * INV_EXP4;
@@ -212,24 +230,51 @@ export class SplatMaterial3D {
                 return pow(noise, 2.2);
             }
 
-            vec3 decodeGamma(vec3 c) {
-                return pow(c, vec3(2.2));
+            // PlayCanvas shader chunk parity
+            vec3 decodeGamma(vec3 raw) {
+                return pow(raw, vec3(2.2));
             }
-            vec3 gammaCorrectOutput(vec3 c) {
-                return pow(c + 1e-7, vec3(1.0 / 2.2));
+
+            vec3 gammaCorrectOutput(vec3 color, int gammaMode) {
+                // gammaMode: 1 = SRGB, 0 = NONE
+                return (gammaMode == 1) ? pow(color + 1e-7, vec3(1.0 / 2.2)) : color;
             }
-            vec3 toneMapAces(vec3 x) {
+
+            vec3 toneMapLinear(vec3 color, float exposure) {
+                return color * exposure;
+            }
+
+            vec3 toneMapAces(vec3 color, float exposure) {
                 const float a = 2.51;
                 const float b = 0.03;
                 const float c = 2.43;
                 const float d = 0.59;
                 const float e = 0.14;
+                vec3 x = color * exposure;
                 return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
             }
-            vec3 prepareOutputFromGamma(vec3 gammaColor, int gammaMode, int toneMapMode) {
-                vec3 lin = (gammaMode == 0) ? decodeGamma(gammaColor) : gammaColor;
-                if (toneMapMode == 0) return lin;
-                return gammaCorrectOutput(toneMapAces(lin));
+
+            vec3 toneMap(vec3 linearColor, int toneMapMode, float exposure) {
+                // toneMapMode: 0=NONE, 1=LINEAR, 2=ACES
+                if (toneMapMode == 1) return toneMapLinear(linearColor, exposure);
+                if (toneMapMode == 2) return toneMapAces(linearColor, exposure);
+                return linearColor;
+            }
+
+            vec3 prepareOutputFromGamma(vec3 gammaColor, int gammaMode, int toneMapMode, float exposure) {
+                // Mirrors PlayCanvas gsplatOutputVS: output is either linear or gamma depending on GAMMA and TONEMAP.
+                if (toneMapMode == 0) {
+                    // TONEMAP == NONE
+                    if (gammaMode == 0) {
+                        // GAMMA == NONE -> convert to linear
+                        return decodeGamma(gammaColor);
+                    }
+                    // GAMMA == SRGB -> output gamma color directly
+                    return gammaColor;
+                }
+
+                // TONEMAP != NONE -> tonemap in linear then output linear or gamma
+                return gammaCorrectOutput(toneMap(decodeGamma(gammaColor), toneMapMode, exposure), gammaMode);
             }
 
             void main () {
@@ -248,7 +293,9 @@ export class SplatMaterial3D {
                 }
 
                 float alpha = normExp(r2) * vColor.a;
-                if (alpha < MIN_ALPHA) discard;
+
+                // PlayCanvas/supersplat parity: discard below 1/255.
+                if (alpha < 1.0 / 255.0) discard;
 
                 if (renderMode == 3 && ringSize > 0.0) {
                     if (r2 < 1.0 - ringSize) {
@@ -259,11 +306,11 @@ export class SplatMaterial3D {
                 }
 
                 if (ditherMode != 0) {
-                    float noise = ignNoise(gl_FragCoord.xy, ditherJitter, vPickColor.x * 255.0 * 0.013);
+                    float noise = ignNoise(gl_FragCoord.xy, ditherJitter, vDitherId * 0.013);
                     if (alpha < noise) discard;
                 }
 
-                vec3 color = prepareOutputFromGamma(max(vColor.rgb, 0.0), gammaMode, toneMapMode);
+                vec3 color = prepareOutputFromGamma(max(vColor.rgb, 0.0), gammaMode, toneMapMode, exposure);
                 gl_FragColor = vec4(color * alpha, alpha);
             }
         `;
