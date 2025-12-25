@@ -64,6 +64,9 @@ export class SplatMaterial {
         varying vec2 vUv;
         varying vec2 vPosition;
 
+        // PlayCanvas gsplat parity: dither seed uses varying float id.
+        varying float vDitherId;
+
         // supersplat parity: allow pick/outline passes without requiring extra UI.
         // We keep this as varying so fragment can output exact bytes without relying on float bit tricks.
         varying vec3 vPickColor;
@@ -97,25 +100,33 @@ export class SplatMaterial {
            return rgba;
         }
 
+        // Sample at texel centers to avoid filtering/edge ambiguity.
+        // This improves parity with PlayCanvas (which uses texelFetch).
         vec2 getDataUV(in int stride, in int offset, in vec2 dimensions) {
-            vec2 samplerUV = vec2(0.0, 0.0);
-            float d = float(splatIndex * uint(stride) + uint(offset)) / dimensions.x;
-            samplerUV.y = float(floor(d)) / dimensions.y;
-            samplerUV.x = fract(d);
-            return samplerUV;
+            float linearIndex = float(splatIndex * uint(stride) + uint(offset));
+            float y = floor(linearIndex / dimensions.x);
+            float x = linearIndex - y * dimensions.x;
+            return (vec2(x + 0.5, y + 0.5) / dimensions);
         }
 
         vec2 getDataUVF(in uint sIndex, in float stride, in uint offset, in vec2 dimensions) {
-            vec2 samplerUV = vec2(0.0, 0.0);
-            float d = float(uint(float(sIndex) * stride) + offset) / dimensions.x;
-            samplerUV.y = float(floor(d)) / dimensions.y;
-            samplerUV.x = fract(d);
-            return samplerUV;
+            float linearIndex = float(uint(float(sIndex) * stride) + offset);
+            float y = floor(linearIndex / dimensions.x);
+            float x = linearIndex - y * dimensions.x;
+            return (vec2(x + 0.5, y + 0.5) / dimensions);
         }
 
         const float SH_C1 = 0.4886025119029199f;
         const float[5] SH_C2 = float[](1.0925484, -1.0925484, 0.3153916, -1.0925484, 0.5462742);
-        const float[7] SH_C3 = float[](-0.5900435899266435, 2.890611442640554, -0.4570457994644658, 0.3731763325901154, -0.4570457994644658, 1.445305721320277, -0.5900435899266435);
+        const float[7] SH_C3 = float[](
+            -0.5900435899266435,
+            2.890611442640554,
+            -0.4570457994644658,
+            0.3731763325901154,
+            -0.4570457994644658,
+            1.445305721320277,
+            -0.5900435899266435
+        );
 
         void main () {
 
@@ -128,9 +139,13 @@ export class SplatMaterial {
             uvec4 sampledCenterColor = texture(centersColorsTexture, getDataUV(1, 0, centersColorsTextureSize));
             vec3 splatCenter = uintBitsToFloat(uvec3(sampledCenterColor.gba));
 
-            // Encode up to 24-bit splat id into RGB for a simple pick pass (supersplat uses 32-bit; 24-bit is enough for most splat counts).
+            // Encode up to 24-bit splat id into RGB for a simple pick pass
+            // (supersplat uses 32-bit; 24-bit is enough for most splat counts).
             uvec3 pickBytes = (uvec3(splatIndex) >> uvec3(0u, 8u, 16u)) & uvec3(255u);
             vPickColor = vec3(pickBytes) / 255.0;
+
+            // Dither seed (PlayCanvas uses varying float id; float keeps exact integer up to ~16.7M).
+            vDitherId = float(splatIndex);
 
             uint sceneIndex = uint(0);
             if (sceneCount > 1) {
@@ -167,13 +182,16 @@ export class SplatMaterial {
 
             vec4 viewCenter = transformModelViewMatrix * vec4(splatCenter, 1.0);
 
-            vec4 clipCenter = projectionMatrix * viewCenter;
-
-            float clip = 1.2 * clipCenter.w;
-            if (clipCenter.z < -clip || clipCenter.x < -clip || clipCenter.x > clip || clipCenter.y < -clip || clipCenter.y > clip) {
+            // PlayCanvas/supersplat parity (gsplatCenterVS):
+            // - early out if behind camera
+            // - clamp clip-space z to avoid near/far clipping artifacts
+            if (viewCenter.z > 0.0) {
                 gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
                 return;
             }
+
+            vec4 clipCenter = projectionMatrix * viewCenter;
+            clipCenter.z = clamp(clipCenter.z, -abs(clipCenter.w), abs(clipCenter.w));
 
             vec3 ndcCenter = clipCenter.xyz / clipCenter.w;
 

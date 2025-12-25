@@ -46,6 +46,18 @@ const MAX_TEXTURE_TEXELS = 16777216;
  */
 export class SplatMesh extends THREE.Mesh {
 
+    static configureDataTextureForLookup(texture) {
+        // These textures store packed data (lookup tables), not images.
+        // Use nearest filtering + no mipmaps to avoid interpolation blur and match texelFetch semantics.
+        texture.magFilter = THREE.NearestFilter;
+        texture.minFilter = THREE.NearestFilter;
+        texture.generateMipmaps = false;
+        texture.wrapS = THREE.ClampToEdgeWrapping;
+        texture.wrapT = THREE.ClampToEdgeWrapping;
+        texture.flipY = false;
+        return texture;
+    }
+
     constructor(splatRenderMode = SplatRenderMode.ThreeD, dynamicMode = false, enableOptionalEffects = false,
                 halfPrecisionCovariancesOnGPU = false, devicePixelRatio = 1, enableDistancesComputationOnGPU = true,
                 integerBasedDistancesComputation = false, antialiased = false, maxScreenSpaceSplatSize = 1024, logLevel = LogLevel.None,
@@ -690,6 +702,7 @@ export class SplatMesh extends THREE.Mesh {
 
         const centersColsTex = new THREE.DataTexture(paddedCentersCols, centersColsTexSize.x, centersColsTexSize.y,
                                                      THREE.RGBAIntegerFormat, THREE.UnsignedIntType);
+        SplatMesh.configureDataTextureForLookup(centersColsTex);
         centersColsTex.internalFormat = 'RGBA32UI';
         centersColsTex.needsUpdate = true;
         this.material.uniforms.centersColorsTexture.value = centersColsTex;
@@ -735,14 +748,17 @@ export class SplatMesh extends THREE.Mesh {
             if (covarianceCompressionLevel >= 1) {
                 covTex = new THREE.DataTexture(covariancesTextureData, covTexSize.x, covTexSize.y,
                                                THREE.RGBAIntegerFormat, THREE.UnsignedIntType);
+                SplatMesh.configureDataTextureForLookup(covTex);
                 covTex.internalFormat = 'RGBA32UI';
                 this.material.uniforms.covariancesTextureHalfFloat.value = covTex;
             } else {
                 covTex = new THREE.DataTexture(covariancesTextureData, covTexSize.x, covTexSize.y, THREE.RGBAFormat, THREE.FloatType);
+                SplatMesh.configureDataTextureForLookup(covTex);
                 this.material.uniforms.covariancesTexture.value = covTex;
 
                 // For some reason a usampler2D needs to have a valid texture attached or WebGL complains
                 const dummyTex = new THREE.DataTexture(new Uint32Array(32), 2, 2, THREE.RGBAIntegerFormat, THREE.UnsignedIntType);
+                SplatMesh.configureDataTextureForLookup(dummyTex);
                 dummyTex.internalFormat = 'RGBA32UI';
                 this.material.uniforms.covariancesTextureHalfFloat.value = dummyTex;
                 dummyTex.needsUpdate = true;
@@ -773,6 +789,7 @@ export class SplatMesh extends THREE.Mesh {
 
             const scaleRotationsTex = new THREE.DataTexture(paddedScaleRotations, scaleRotationsTexSize.x, scaleRotationsTexSize.y,
                                                             THREE.RGBAFormat, scaleRotationsTextureType);
+            SplatMesh.configureDataTextureForLookup(scaleRotationsTex);
             scaleRotationsTex.needsUpdate = true;
             this.material.uniforms.scaleRotationsTexture.value = scaleRotationsTex;
             this.material.uniforms.scaleRotationsTextureSize.value.copy(scaleRotationsTexSize);
@@ -809,6 +826,8 @@ export class SplatMesh extends THREE.Mesh {
                 }
 
                 const shTexture = new THREE.DataTexture(paddedSHArray, shTexSize.x, shTexSize.y, texelFormat, shTextureType);
+                SplatMesh.configureDataTextureForLookup(shTexture);
+                    SplatMesh.configureDataTextureForLookup(shTexture);
                 shTexture.needsUpdate = true;
                 this.material.uniforms.sphericalHarmonicsTexture.value = shTexture;
                 this.splatDataTextures['sphericalHarmonics'] = {
@@ -885,6 +904,7 @@ export class SplatMesh extends THREE.Mesh {
         for (let c = 0; c < splatCount; c++) paddedTransformIndexes[c] = this.globalSplatIndexToSceneIndexMap[c];
         const sceneIndexesTexture = new THREE.DataTexture(paddedTransformIndexes, sceneIndexesTexSize.x, sceneIndexesTexSize.y,
                                                           THREE.RedIntegerFormat, THREE.UnsignedIntType);
+        SplatMesh.configureDataTextureForLookup(sceneIndexesTexture);
         sceneIndexesTexture.internalFormat = 'R32UI';
         sceneIndexesTexture.needsUpdate = true;
         this.material.uniforms.sceneIndexesTexture.value = sceneIndexesTexture;
@@ -1462,9 +1482,12 @@ export class SplatMesh extends THREE.Mesh {
                     `;
                 } else {
                     vsSource += `
-                        uniform ivec3 modelViewProj;
+                        uniform ivec4 modelViewProj;
                         void main(void) {
-                            distance = center.x * modelViewProj.x + center.y * modelViewProj.y + center.z * modelViewProj.z;
+                            distance = center.x * modelViewProj.x +
+                                       center.y * modelViewProj.y +
+                                       center.z * modelViewProj.z +
+                                       modelViewProj.w * center.w;
                         }
                     `;
                 }
@@ -1484,9 +1507,12 @@ export class SplatMesh extends THREE.Mesh {
                     `;
                 } else {
                     vsSource += `
-                        uniform vec3 modelViewProj;
+                        uniform vec4 modelViewProj;
                         void main(void) {
-                            distance = center.x * modelViewProj.x + center.y * modelViewProj.y + center.z * modelViewProj.z;
+                            distance = center.x * modelViewProj.x +
+                                       center.y * modelViewProj.y +
+                                       center.z * modelViewProj.z +
+                                       modelViewProj.w * center.w;
                         }
                     `;
                 }
@@ -1732,11 +1758,16 @@ export class SplatMesh extends THREE.Mesh {
             } else {
                 if (this.integerBasedDistancesComputation) {
                     const iViewProjMatrix = SplatMesh.getIntegerMatrixArray(modelViewProjMatrix);
-                    const iViewProj = [iViewProjMatrix[2], iViewProjMatrix[6], iViewProjMatrix[10]];
-                    gl.uniform3i(this.distancesTransformFeedback.modelViewProjLoc, iViewProj[0], iViewProj[1], iViewProj[2]);
+                    const iViewProj = [iViewProjMatrix[2], iViewProjMatrix[6], iViewProjMatrix[10], iViewProjMatrix[14]];
+                    gl.uniform4i(this.distancesTransformFeedback.modelViewProjLoc, iViewProj[0], iViewProj[1], iViewProj[2], iViewProj[3]);
                 } else {
-                    const viewProj = [modelViewProjMatrix.elements[2], modelViewProjMatrix.elements[6], modelViewProjMatrix.elements[10]];
-                    gl.uniform3f(this.distancesTransformFeedback.modelViewProjLoc, viewProj[0], viewProj[1], viewProj[2]);
+                    const viewProj = [
+                        modelViewProjMatrix.elements[2],
+                        modelViewProjMatrix.elements[6],
+                        modelViewProjMatrix.elements[10],
+                        modelViewProjMatrix.elements[14],
+                    ];
+                    gl.uniform4f(this.distancesTransformFeedback.modelViewProjLoc, viewProj[0], viewProj[1], viewProj[2], viewProj[3]);
                 }
             }
 
